@@ -1,10 +1,6 @@
 
 import { Course, Enrollment } from '../types';
 
-// These functions would typically make actual API calls to your PHP backend
-// For now, they'll work with mock data
-
-// Mock data for courses
 const MOCK_COURSES: Course[] = [
   {
     id: '1',
