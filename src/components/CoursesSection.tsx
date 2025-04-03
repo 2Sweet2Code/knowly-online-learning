@@ -2,35 +2,55 @@
 import { useState, useEffect } from "react";
 import { CourseCard } from "./CourseCard";
 import { Course } from "../types";
-import { getCoursesByCategory } from "../api";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
+
+const fetchCourses = async (category: string) => {
+  let query = supabase.from('courses').select('*');
+  
+  if (category !== 'all') {
+    query = query.eq('category', category);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) {
+    throw error;
+  }
+  
+  return data.map(course => ({
+    id: course.id,
+    title: course.title,
+    description: course.description,
+    image: course.image,
+    category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+    instructor: course.instructor,
+    instructorId: course.instructor_id,
+    students: course.students || 0,
+    status: course.status as 'active' | 'draft'
+  }));
+};
 
 export const CoursesSection = () => {
   const [activeFilter, setActiveFilter] = useState<string>("all");
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const { toast } = useToast();
+  
+  const { data: courses = [], isLoading, error } = useQuery({
+    queryKey: ['courses', activeFilter],
+    queryFn: () => fetchCourses(activeFilter),
+  });
 
   useEffect(() => {
-    const loadCourses = async () => {
-      try {
-        setIsLoading(true);
-        const data = await getCoursesByCategory(activeFilter);
-        setCourses(data);
-      } catch (error) {
-        console.error("Failed to fetch courses", error);
-        toast({
-          title: "Gabim",
-          description: "Ndodhi një gabim gjatë ngarkimit të kurseve. Ju lutemi provoni përsëri.",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadCourses();
-  }, [activeFilter, toast]);
+    if (error) {
+      console.error("Failed to fetch courses", error);
+      toast({
+        title: "Gabim",
+        description: "Ndodhi një gabim gjatë ngarkimit të kurseve. Ju lutemi provoni përsëri.",
+        variant: "destructive",
+      });
+    }
+  }, [error, toast]);
 
   const handleFilterChange = (filter: string) => {
     setActiveFilter(filter);

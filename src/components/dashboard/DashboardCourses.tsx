@@ -1,9 +1,10 @@
 
-import { useState, useEffect } from "react";
-import { getInstructorCourses } from "../../api";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "../../context/AuthContext";
 import { Course } from "../../types";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 
 interface DashboardCoursesProps {
   onCreateCourseClick: () => void;
@@ -11,39 +12,66 @@ interface DashboardCoursesProps {
 
 export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps) => {
   const { user } = useAuth();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
   
-  useEffect(() => {
-    loadCourses();
-  }, [user]);
-
-  const loadCourses = async () => {
-    if (!user) return;
-    
-    try {
-      setIsLoading(true);
-      const data = await getInstructorCourses(user.id);
-      setCourses(data);
-    } catch (error) {
+  const { data: courses = [], isLoading } = useQuery({
+    queryKey: ['instructorCourses', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('instructor_id', user.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      return data.map(course => ({
+        id: course.id,
+        title: course.title,
+        description: course.description,
+        image: course.image,
+        category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+        instructor: course.instructor,
+        instructorId: course.instructor_id,
+        students: course.students || 0,
+        status: course.status as 'active' | 'draft'
+      }));
+    },
+    enabled: !!user,
+    onError: (error) => {
       console.error("Failed to fetch instructor courses", error);
       toast({
         title: "Gabim",
         description: "Ndodhi një gabim gjatë ngarkimit të kurseve. Ju lutemi provoni përsëri.",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
-  };
+  });
 
-  const handleDeleteCourse = (courseId: string) => {
-    // In a real app, this would make an API call
-    toast({
-      title: "Jo e implementuar",
-      description: "Ky funksionalitet do të implementohet në një version të ardhshëm.",
-    });
+  const handleDeleteCourse = async (courseId: string) => {
+    try {
+      const { error } = await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Sukses",
+        description: "Kursi u fshi me sukses.",
+      });
+    } catch (error: any) {
+      console.error("Failed to delete course", error);
+      toast({
+        title: "Gabim",
+        description: "Ndodhi një gabim gjatë fshirjes së kursit. Ju lutemi provoni përsëri.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleManageCourse = (courseId: string) => {

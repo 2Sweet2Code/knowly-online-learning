@@ -1,48 +1,70 @@
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { getUserEnrollments, getCourses } from "../api";
-import { Enrollment, Course } from "../types";
+import { supabase } from "@/integrations/supabase/client";
+import { Course } from "../types";
+import { useQuery } from "@tanstack/react-query";
+
+interface EnrolledCourse extends Course {
+  progress: number;
+  completed: boolean;
+}
 
 export const MySpaceSection = () => {
   const { user } = useAuth();
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    const loadUserData = async () => {
-      if (!user) return;
+  
+  const { data: enrolledCourses = [], isLoading } = useQuery({
+    queryKey: ['enrollments', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
       
-      try {
-        setIsLoading(true);
-        // Fetch user enrollments
-        const enrollmentsData = await getUserEnrollments(user.id);
-        setEnrollments(enrollmentsData);
-        
-        // Fetch all courses to map with enrollments
-        const coursesData = await getCourses();
-        setCourses(coursesData);
-      } catch (error) {
-        console.error("Failed to fetch user data", error);
-      } finally {
-        setIsLoading(false);
+      // First get user enrollments
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('enrollments')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError);
+        return [];
       }
-    };
-
-    loadUserData();
-  }, [user]);
-
-  // Get enrolled courses with progress information
-  const enrolledCourses = enrollments.map(enrollment => {
-    const courseData = courses.find(course => course.id === enrollment.courseId);
-    return {
-      ...courseData,
-      progress: enrollment.progress,
-      completed: enrollment.completed
-    };
-  }).filter(Boolean) as (Course & { progress: number, completed: boolean })[];
+      
+      if (!enrollments.length) return [];
+      
+      // Then get course details for each enrollment
+      const enrolledCourseIds = enrollments.map(e => e.course_id);
+      
+      const { data: courses, error: coursesError } = await supabase
+        .from('courses')
+        .select('*')
+        .in('id', enrolledCourseIds);
+      
+      if (coursesError) {
+        console.error('Error fetching enrolled courses:', coursesError);
+        return [];
+      }
+      
+      // Map enrollments with courses
+      return courses.map(course => {
+        const enrollment = enrollments.find(e => e.course_id === course.id);
+        return {
+          id: course.id,
+          title: course.title,
+          description: course.description,
+          image: course.image,
+          category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+          instructor: course.instructor,
+          instructorId: course.instructor_id,
+          students: course.students || 0,
+          status: course.status as 'active' | 'draft',
+          progress: enrollment?.progress || 0,
+          completed: enrollment?.completed || false,
+        };
+      });
+    },
+    enabled: !!user
+  });
 
   return (
     <section id="my-space" className="py-16 bg-white border-t border-lightGray">
@@ -81,7 +103,7 @@ export const MySpaceSection = () => {
                   ))}
                 </ul>
               ) : (
-                <p className="text-gray-600">Nuk jeni regjistruar në asnjë kurs ende.</p>
+                <p className="text-gray-600 mb-4">Nuk jeni regjistruar në asnjë kurs ende.</p>
               )}
               <Link to="/courses" className="btn btn-secondary btn-sm mt-4 inline-block">
                 Gjej Kurse të Reja

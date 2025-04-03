@@ -9,7 +9,110 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      courses: {
+        Row: {
+          category: string
+          created_at: string | null
+          description: string
+          id: string
+          image: string
+          instructor: string
+          instructor_id: string
+          status: string | null
+          students: number | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          description: string
+          id?: string
+          image: string
+          instructor: string
+          instructor_id: string
+          status?: string | null
+          students?: number | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          description?: string
+          id?: string
+          image?: string
+          instructor?: string
+          instructor_id?: string
+          status?: string | null
+          students?: number | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      enrollments: {
+        Row: {
+          completed: boolean | null
+          course_id: string
+          created_at: string | null
+          id: string
+          progress: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean | null
+          course_id: string
+          created_at?: string | null
+          id?: string
+          progress?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          completed?: boolean | null
+          course_id?: string
+          created_at?: string | null
+          id?: string
+          progress?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrollments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string | null
+          role: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id: string
+          name?: string | null
+          role?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string | null
+          role?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

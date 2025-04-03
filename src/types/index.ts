@@ -1,4 +1,5 @@
 
+
 export interface User {
   id: string;
   name: string;
@@ -16,6 +17,8 @@ export interface Course {
   instructorId: string;
   students: number;
   status: 'active' | 'draft';
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Enrollment {
@@ -24,4 +27,14 @@ export interface Enrollment {
   userId: string;
   progress: number;
   completed: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Profile {
+  id: string;
+  name: string | null;
+  role: 'student' | 'instructor' | 'admin' | null;
+  created_at?: string;
+  updated_at?: string;
 }

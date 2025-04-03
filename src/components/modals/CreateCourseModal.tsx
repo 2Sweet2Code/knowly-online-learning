@@ -2,8 +2,9 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
-import { createCourse } from "../../api";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface CreateCourseModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   if (!isOpen) return null;
 
@@ -49,14 +51,26 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       // Generate a placeholder image if none provided
       const image = imageUrl || `https://placehold.co/600x360/${encodeURIComponent("#5C4B3A")}/${encodeURIComponent("#F5F0E6")}?text=${encodeURIComponent(title)}`;
       
-      await createCourse({
-        title,
-        description,
-        category,
-        image,
-        instructor: user.name,
-        instructorId: user.id,
-      });
+      const { data, error } = await supabase
+        .from('courses')
+        .insert({
+          title,
+          description,
+          category,
+          image,
+          instructor: user.name,
+          instructor_id: user.id,
+          status: 'draft',
+          students: 0
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      // Invalidate queries to refetch courses
+      queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['instructorCourses', user.id] });
       
       toast({
         title: "Sukses!",
@@ -68,7 +82,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       }
       
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       toast({
         title: "Gabim!",
