@@ -20,7 +20,7 @@ export const Header = () => {
     <header className="sticky top-0 bg-white shadow-sm z-50">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
         <div className="text-2xl font-playfair font-bold text-brown">
-          <Link to="/">Mëso Online</Link>
+          <Link to="/">Knowly</Link>
         </div>
 
         <nav className={`${mobileMenuOpen ? 'flex' : 'hidden'} md:flex flex-col md:flex-row absolute md:static top-full left-0 w-full md:w-auto bg-white md:bg-transparent shadow-md md:shadow-none`}>

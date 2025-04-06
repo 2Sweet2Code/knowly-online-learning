@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -16,14 +16,30 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "instructor" | "">("");
-  const [isLoading, setIsLoading] = useState(false);
-  const { signup } = useAuth();
+  const [localLoading, setLocalLoading] = useState(false);
+  const { signup, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
+
+  // Close modal if user becomes authenticated
+  useEffect(() => {
+    if (isAuthenticated && isOpen) {
+      onClose();
+    }
+  }, [isAuthenticated, isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    if (!name || !email || !password || !confirmPassword || !role) {
+      toast({
+        title: "Gabim!",
+        description: "Ju lutemi plotësoni të gjitha fushat.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     if (password !== confirmPassword) {
       toast({
@@ -34,32 +50,16 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
       return;
     }
 
-    if (!role) {
-      toast({
-        title: "Gabim!",
-        description: "Ju lutemi zgjidhni rolin tuaj.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      setIsLoading(true);
+      setLocalLoading(true);
       await signup(name, email, password, role);
-      toast({
-        title: "Sukses!",
-        description: "Llogaria juaj u krijua me sukses.",
-      });
-      onClose();
+      // No need to show toast here as it's handled in the AuthContext
+      // The modal will close automatically via the useEffect when isAuthenticated changes
     } catch (error) {
       console.error(error);
-      toast({
-        title: "Gabim!",
-        description: "Ndodhi një problem gjatë krijimit të llogarisë. Ju lutemi provoni përsëri.",
-        variant: "destructive",
-      });
+      // No need to show toast here as it's handled in the AuthContext
     } finally {
-      setIsLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -69,15 +69,20 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
     }
   };
 
+  // Determine if we should show loading state
+  const showLoading = localLoading || isLoading;
+
   return (
     <div 
       className="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-60"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-8 relative animate-fade-in">
+      <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-8 relative animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <button 
           className="absolute top-4 right-4 text-gray-500 hover:text-brown"
           onClick={onClose}
+          disabled={showLoading}
+          type="button"
         >
           <X size={20} />
         </button>
@@ -95,6 +100,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -109,6 +115,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -123,6 +130,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -137,6 +145,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -150,6 +159,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={role}
               onChange={(e) => setRole(e.target.value as "student" | "instructor" | "")}
+              disabled={showLoading}
               required
             >
               <option value="">Zgjidhni Rolin...</option>
@@ -161,9 +171,9 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
           <button 
             type="submit" 
             className="btn btn-primary btn-block flex justify-center items-center"
-            disabled={isLoading}
+            disabled={showLoading}
           >
-            {isLoading ? (
+            {showLoading ? (
               <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
             ) : null}
             Regjistrohu
@@ -171,7 +181,14 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
         </form>
         
         <div className="text-center mt-5 text-sm">
-          Keni tashmë llogari? <button className="text-gold font-semibold hover:underline" onClick={onSwitchToLogin}>Kyçu</button>
+          Keni tashmë llogari? <button 
+            className="text-gold font-semibold hover:underline" 
+            onClick={onSwitchToLogin}
+            disabled={showLoading}
+            type="button"
+          >
+            Kyçu
+          </button>
         </div>
       </div>
     </div>

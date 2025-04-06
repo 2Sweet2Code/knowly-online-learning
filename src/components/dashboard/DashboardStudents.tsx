@@ -1,5 +1,40 @@
 
+import { useState } from 'react';
+import { useToast } from "@/components/ui/use-toast";
+
 export const DashboardStudents = () => {
+  const { toast } = useToast();
+  const [selectedCourse, setSelectedCourse] = useState('all');
+  
+  // Sample student data
+  const students = [
+    {
+      id: '1',
+      name: 'Albi Deda',
+      email: 'albi.d@email.com',
+      courses: ['Python', 'React'],
+    },
+    {
+      id: '2',
+      name: 'Lira Shala',
+      email: 'lira.s@email.com',
+      courses: ['Marketing', 'Python'],
+    },
+    {
+      id: '3',
+      name: 'Bora Kalo',
+      email: 'bora.k@email.com',
+      courses: ['React'],
+    },
+  ];
+
+  const handleViewProfile = (studentId: string) => {
+    toast({
+      title: "Profili i Studentit",
+      description: "Po hapet profili i studentit.",
+    });
+  };
+
   return (
     <div>
       <h3 className="text-2xl font-playfair mb-6 pb-3 border-b border-lightGray">
@@ -16,10 +51,13 @@ export const DashboardStudents = () => {
           <select 
             id="course-filter" 
             className="px-4 py-2 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
+            value={selectedCourse}
+            onChange={(e) => setSelectedCourse(e.target.value)}
           >
-            <option>Të gjitha Kurset</option>
-            <option>Hyrje në Programim me Python</option>
-            <option>React.js: Ndërto Aplikacione Web</option>
+            <option value="all">Të gjitha Kurset</option>
+            <option value="Python">Hyrje në Programim me Python</option>
+            <option value="React">React.js: Ndërto Aplikacione Web</option>
+            <option value="Marketing">Marketing Digjital</option>
           </select>
         </div>
         
@@ -34,36 +72,23 @@ export const DashboardStudents = () => {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td className="border border-lightGray p-3">Albi Deda</td>
-                <td className="border border-lightGray p-3">albi.d@email.com</td>
-                <td className="border border-lightGray p-3">Python, React</td>
-                <td className="border border-lightGray p-3">
-                  <button className="btn btn-secondary btn-sm">
-                    Shiko Profilin
-                  </button>
-                </td>
-              </tr>
-              <tr>
-                <td className="border border-lightGray p-3">Lira Shala</td>
-                <td className="border border-lightGray p-3">lira.s@email.com</td>
-                <td className="border border-lightGray p-3">Marketing, Python</td>
-                <td className="border border-lightGray p-3">
-                  <button className="btn btn-secondary btn-sm">
-                    Shiko Profilin
-                  </button>
-                </td>
-              </tr>
-              <tr>
-                <td className="border border-lightGray p-3">Bora Kalo</td>
-                <td className="border border-lightGray p-3">bora.k@email.com</td>
-                <td className="border border-lightGray p-3">React</td>
-                <td className="border border-lightGray p-3">
-                  <button className="btn btn-secondary btn-sm">
-                    Shiko Profilin
-                  </button>
-                </td>
-              </tr>
+              {students
+                .filter(student => selectedCourse === 'all' || student.courses.includes(selectedCourse))
+                .map(student => (
+                <tr key={student.id}>
+                  <td className="border border-lightGray p-3">{student.name}</td>
+                  <td className="border border-lightGray p-3">{student.email}</td>
+                  <td className="border border-lightGray p-3">{student.courses.join(', ')}</td>
+                  <td className="border border-lightGray p-3">
+                    <button 
+                      className="px-3 py-1 bg-brown text-white rounded hover:bg-brown-dark transition-colors"
+                      onClick={() => handleViewProfile(student.id)}
+                    >
+                      Shiko Profilin
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

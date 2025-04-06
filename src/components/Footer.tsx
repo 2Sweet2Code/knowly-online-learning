@@ -5,6 +5,9 @@ export const Footer = () => {
   return (
     <footer className="bg-brown-dark text-cream py-10 mt-12">
       <div className="container mx-auto px-4 flex flex-col items-center text-center">
+        <div className="text-xl font-playfair font-bold text-cream mb-4">
+          <Link to="/" className="text-cream hover:text-gold">Knowly</Link>
+        </div>
         <ul className="flex flex-wrap justify-center gap-6 mb-4">
           <li>
             <Link to="/privacy" className="text-cream hover:text-gold">
@@ -23,7 +26,7 @@ export const Footer = () => {
           </li>
         </ul>
         <p className="text-sm opacity-80 mt-2">
-          © {new Date().getFullYear()} Mëso Online. Të gjitha të drejtat e rezervuara.
+          © {new Date().getFullYear()} Knowly. Të gjitha të drejtat e rezervuara.
         </p>
       </div>
     </footer>

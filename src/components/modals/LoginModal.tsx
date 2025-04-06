@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -13,32 +13,41 @@ interface LoginModalProps {
 export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProps) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [localLoading, setLocalLoading] = useState(false);
+  const { login, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
+
+  // Close modal if user becomes authenticated
+  useEffect(() => {
+    if (isAuthenticated && isOpen) {
+      onClose();
+    }
+  }, [isAuthenticated, isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    try {
-      setIsLoading(true);
-      await login(email, password);
-      toast({
-        title: "Sukses!",
-        description: "Ju u kyçët me sukses.",
-      });
-      onClose();
-    } catch (error) {
-      console.error(error);
+    if (!email || !password) {
       toast({
         title: "Gabim!",
-        description: "Email ose fjalëkalimi i pavlefshëm. Ju lutemi provoni përsëri.",
+        description: "Ju lutemi plotësoni të gjitha fushat.",
         variant: "destructive",
       });
+      return;
+    }
+    
+    try {
+      setLocalLoading(true);
+      await login(email, password);
+      // No need to show toast here as it's handled in the AuthContext
+      // The modal will close automatically via the useEffect when isAuthenticated changes
+    } catch (error) {
+      console.error(error);
+      // No need to show toast here as it's handled in the AuthContext
     } finally {
-      setIsLoading(false);
+      setLocalLoading(false);
     }
   };
 
@@ -48,15 +57,20 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
     }
   };
 
+  // Determine if we should show loading state
+  const showLoading = localLoading || isLoading;
+
   return (
     <div 
       className="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-60"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-8 relative animate-fade-in">
+      <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-8 relative animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <button 
           className="absolute top-4 right-4 text-gray-500 hover:text-brown"
           onClick={onClose}
+          disabled={showLoading}
+          type="button"
         >
           <X size={20} />
         </button>
@@ -74,6 +88,7 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -88,6 +103,7 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={showLoading}
               required
             />
           </div>
@@ -95,9 +111,9 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
           <button 
             type="submit" 
             className="btn btn-primary btn-block flex justify-center items-center"
-            disabled={isLoading}
+            disabled={showLoading}
           >
-            {isLoading ? (
+            {showLoading ? (
               <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
             ) : null}
             Kyçu
@@ -105,11 +121,22 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
         </form>
         
         <div className="text-center mt-5 text-sm">
-          Nuk keni llogari? <button className="text-gold font-semibold hover:underline" onClick={onSwitchToSignup}>Regjistrohu</button>
+          Nuk keni llogari? <button 
+            className="text-gold font-semibold hover:underline" 
+            onClick={onSwitchToSignup}
+            disabled={showLoading}
+            type="button"
+          >
+            Regjistrohu
+          </button>
         </div>
         
         <div className="text-center mt-3">
-          <button className="text-sm text-gray-500 hover:text-brown">
+          <button 
+            className="text-sm text-gray-500 hover:text-brown"
+            disabled={showLoading}
+            type="button"
+          >
             Keni harruar fjalëkalimin?
           </button>
         </div>
