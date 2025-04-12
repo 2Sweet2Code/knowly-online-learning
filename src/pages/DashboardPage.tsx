@@ -1,28 +1,40 @@
-
 import { useState } from "react";
 import { Footer } from "../components/Footer";
 import { Header } from "../components/Header";
 import { DashboardSidebar } from "../components/dashboard/DashboardSidebar";
 import { DashboardOverview } from "../components/dashboard/DashboardOverview";
 import { DashboardCourses } from "../components/dashboard/DashboardCourses";
+import { DashboardCourseLessons } from "../components/dashboard/DashboardCourseLessons";
 import { DashboardStudents } from "../components/dashboard/DashboardStudents";
 import { DashboardAnalytics } from "../components/dashboard/DashboardAnalytics";
 import { DashboardSettings } from "../components/dashboard/DashboardSettings";
 import { DashboardUserManagement } from "../components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "../components/dashboard/DashboardContentModeration";
+import { DashboardQuestions } from "../components/dashboard/DashboardQuestions";
 import { CreateCourseModal } from "../components/modals/CreateCourseModal";
 import { useAuth } from "../context/AuthContext";
-import { Navigate } from "react-router-dom";
+import { Navigate, Routes, Route, Outlet } from "react-router-dom";
+import CourseManagementPage from "./CourseManagementPage";
 
 const DashboardPage = () => {
   const { user, isLoading } = useAuth();
-  const [activeView, setActiveView] = useState("dashboard");
   const [createCourseModalOpen, setCreateCourseModalOpen] = useState(false);
 
-  // Redirect if not authenticated or not an instructor/admin
   if (!isLoading && (!user || (user.role !== 'instructor' && user.role !== 'admin'))) {
     return <Navigate to="/" />;
   }
+  
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        Loading... 
+      </div>
+    );
+  }
+
+  const handleCreateCourseClick = () => {
+    setCreateCourseModalOpen(true);
+  };
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -35,30 +47,33 @@ const DashboardPage = () => {
           
           <div className="flex flex-col md:flex-row gap-8">
             <DashboardSidebar 
-              activeView={activeView}
-              onViewChange={setActiveView}
-              onCreateCourseClick={() => setCreateCourseModalOpen(true)}
+              onCreateCourseClick={handleCreateCourseClick}
             />
             
             <div className="flex-grow">
-              {activeView === 'dashboard' && (
-                <DashboardOverview 
-                  onCreateCourseClick={() => setCreateCourseModalOpen(true)}
-                  onViewChange={setActiveView}
-                />
-              )}
-              
-              {activeView === 'my-courses' && (
-                <DashboardCourses 
-                  onCreateCourseClick={() => setCreateCourseModalOpen(true)}
-                />
-              )}
-              
-              {activeView === 'students' && <DashboardStudents />}
-              {activeView === 'analytics' && <DashboardAnalytics />}
-              {activeView === 'settings' && <DashboardSettings />}
-              {activeView === 'user-management' && <DashboardUserManagement />}
-              {activeView === 'content-moderation' && <DashboardContentModeration />}
+              <Routes>
+                <Route index element={ 
+                  <DashboardOverview onCreateCourseClick={handleCreateCourseClick} />
+                } /> 
+                <Route path="courses">
+                  <Route index element={ 
+                    <DashboardCourses onCreateCourseClick={handleCreateCourseClick} />
+                  } />
+                  <Route path=":courseId/*" element={<CourseManagementPage />} />
+                </Route>
+                <Route path="students" element={<DashboardStudents />} />
+                <Route path="analytics" element={<DashboardAnalytics />} />
+                <Route path="questions" element={<DashboardQuestions />} />
+                <Route path="settings" element={<DashboardSettings />} />
+                {user?.role === 'admin' && (
+                  <>
+                    <Route path="user-management" element={<DashboardUserManagement />} />
+                    <Route path="content-moderation" element={<DashboardContentModeration />} />
+                  </>
+                )}
+                
+                <Route path="*" element={<Navigate to="/dashboard" replace />} /> 
+              </Routes>
             </div>
           </div>
         </div>

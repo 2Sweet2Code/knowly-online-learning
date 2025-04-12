@@ -1,13 +1,13 @@
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { CourseCard } from "./CourseCard";
 import { Course } from "../types";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle } from "lucide-react";
 
 const fetchCourses = async (category: string) => {
-  let query = supabase.from('courses').select('*');
+  let query = supabase.from('courses').select('*').eq('status', 'active');
   
   if (category !== 'all') {
     query = query.eq('category', category);
@@ -16,9 +16,12 @@ const fetchCourses = async (category: string) => {
   const { data, error } = await query;
   
   if (error) {
+    console.error("Error fetching public courses:", error);
     throw error;
   }
   
+  if (!data) return [];
+
   return data.map(course => ({
     id: course.id,
     title: course.title,
@@ -28,29 +31,26 @@ const fetchCourses = async (category: string) => {
     instructor: course.instructor,
     instructorId: course.instructor_id,
     students: course.students || 0,
-    status: course.status as 'active' | 'draft'
+    status: course.status as 'active' | 'draft',
+    price: course.price || 0,
+    isPaid: !!course.isPaid,
+    accessCode: course.accessCode,
+    created_at: course.created_at,
+    updated_at: course.updated_at
   }));
 };
 
 export const CoursesSection = () => {
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
-  const { data: courses = [], isLoading, error } = useQuery({
-    queryKey: ['courses', activeFilter],
+  const { data: courses = [], isLoading, isError, error } = useQuery<Course[], Error>({
+    queryKey: ['publicCourses', activeFilter],
     queryFn: () => fetchCourses(activeFilter),
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: true,
   });
-
-  useEffect(() => {
-    if (error) {
-      console.error("Failed to fetch courses", error);
-      toast({
-        title: "Gabim",
-        description: "Ndodhi një gabim gjatë ngarkimit të kurseve. Ju lutemi provoni përsëri.",
-        variant: "destructive",
-      });
-    }
-  }, [error, toast]);
 
   const handleFilterChange = (filter: string) => {
     setActiveFilter(filter);
@@ -100,16 +100,33 @@ export const CoursesSection = () => {
             <p className="mt-2 text-brown">Po ngarkohen kurset...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {courses.map((course) => (
-              <CourseCard key={course.id} course={course} />
-            ))}
-            {courses.length === 0 && (
-              <div className="col-span-full text-center py-10 text-gray-600">
-                Nuk ka kurse në kategorinë e zgjedhur.
-              </div>
-            )}
-          </div>
+          isError ? (
+            <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
+              <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
+              <h4 className="text-lg font-semibold text-red-700 mb-2">Gabim gjatë ngarkimit të kurseve</h4>
+              <p className="text-red-600 mb-4">
+                {error?.message || "Ndodhi një gabim i papritur. Ju lutemi provoni përsëri më vonë."}
+              </p>
+              <button 
+                className="btn btn-secondary btn-sm"
+                onClick={() => queryClient.refetchQueries({ queryKey: ['publicCourses', activeFilter] })}
+              >
+                Provo Përsëri
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {courses.length > 0 ? (
+                courses.map((course) => (
+                  <CourseCard key={course.id} course={course} />
+                ))
+              ) : (
+                <div className="col-span-full text-center py-10 text-gray-600">
+                  Nuk u gjetën kurse aktive në këtë kategori.
+                </div>
+              )}
+            </div>
+          )
         )}
       </div>
     </section>

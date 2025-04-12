@@ -1,15 +1,18 @@
-
 import { useAuth } from "../../context/AuthContext";
+import { NavLink } from "react-router-dom";
 
 interface DashboardSidebarProps {
-  activeView: string;
-  onViewChange: (view: string) => void;
   onCreateCourseClick: () => void;
 }
 
+const baseLinkClasses = "w-full text-left py-2 px-4 rounded-md transition-colors text-brown";
+const activeLinkClasses = "bg-cream text-brown-dark font-semibold";
+const inactiveLinkClasses = "hover:bg-cream";
+
+const getNavLinkClass = ({ isActive }: { isActive: boolean }) => 
+  `${baseLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`;
+
 export const DashboardSidebar = ({ 
-  activeView, 
-  onViewChange,
   onCreateCourseClick
 }: DashboardSidebarProps) => {
   const { user } = useAuth();
@@ -22,72 +25,53 @@ export const DashboardSidebar = ({
       </h4>
       <ul className="space-y-2">
         <li>
-          <button 
-            className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-              activeView === 'dashboard' 
-                ? 'bg-cream text-brown-dark font-semibold' 
-                : 'hover:bg-cream text-brown'
-            }`}
-            onClick={() => onViewChange('dashboard')}
+          <NavLink 
+            to="." 
+            end
+            className={getNavLinkClass}
           >
             Paneli Kryesor
-          </button>
+          </NavLink>
         </li>
         <li>
-          <button 
-            className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-              activeView === 'my-courses' 
-                ? 'bg-cream text-brown-dark font-semibold' 
-                : 'hover:bg-cream text-brown'
-            }`}
-            onClick={() => onViewChange('my-courses')}
+          <NavLink 
+            to="courses" 
+            className={getNavLinkClass}
           >
             Kurset e Mia
-          </button>
+          </NavLink>
         </li>
         <li>
           <button 
-            className="w-full text-left py-2 px-4 rounded-md transition-colors hover:bg-cream text-brown"
+            className={`${baseLinkClasses} ${inactiveLinkClasses}`}
             onClick={onCreateCourseClick}
           >
             Krijo Kurs
           </button>
         </li>
         <li>
-          <button 
-            className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-              activeView === 'students' 
-                ? 'bg-cream text-brown-dark font-semibold' 
-                : 'hover:bg-cream text-brown'
-            }`}
-            onClick={() => onViewChange('students')}
+          <NavLink 
+            to="students" 
+            className={getNavLinkClass}
           >
             Studentët
-          </button>
+          </NavLink>
         </li>
         <li>
-          <button 
-            className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-              activeView === 'analytics' 
-                ? 'bg-cream text-brown-dark font-semibold' 
-                : 'hover:bg-cream text-brown'
-            }`}
-            onClick={() => onViewChange('analytics')}
+          <NavLink 
+            to="questions" 
+            className={getNavLinkClass}
           >
-            Analitika
-          </button>
+            Pyetjet
+          </NavLink>
         </li>
         <li>
-          <button 
-            className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-              activeView === 'settings' 
-                ? 'bg-cream text-brown-dark font-semibold' 
-                : 'hover:bg-cream text-brown'
-            }`}
-            onClick={() => onViewChange('settings')}
+          <NavLink 
+            to="settings" 
+            className={getNavLinkClass}
           >
             Cilësimet
-          </button>
+          </NavLink>
         </li>
         
         {isAdmin && (
@@ -96,28 +80,20 @@ export const DashboardSidebar = ({
               <hr className="border-t border-lightGray my-3" />
             </li>
             <li>
-              <button 
-                className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-                  activeView === 'user-management' 
-                    ? 'bg-cream text-brown-dark font-semibold' 
-                    : 'hover:bg-cream text-brown'
-                }`}
-                onClick={() => onViewChange('user-management')}
+              <NavLink 
+                to="user-management" 
+                className={getNavLinkClass}
               >
                 Menaxho Përdoruesit
-              </button>
+              </NavLink>
             </li>
             <li>
-              <button 
-                className={`w-full text-left py-2 px-4 rounded-md transition-colors ${
-                  activeView === 'content-moderation' 
-                    ? 'bg-cream text-brown-dark font-semibold' 
-                    : 'hover:bg-cream text-brown'
-                }`}
-                onClick={() => onViewChange('content-moderation')}
+              <NavLink 
+                to="content-moderation" 
+                className={getNavLinkClass}
               >
                 Modero Përmbajtjen
-              </button>
+              </NavLink>
             </li>
           </>
         )}

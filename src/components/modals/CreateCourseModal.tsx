@@ -1,10 +1,9 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface CreateCourseModalProps {
   isOpen: boolean;
@@ -15,12 +14,33 @@ interface CreateCourseModalProps {
 export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseModalProps) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<"programim" | "dizajn" | "marketing" | "other" | "">("");
+  const [category, setCategory] = useState<string>("");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+  const [isPaid, setIsPaid] = useState(false);
+  const [price, setPrice] = useState<number | "">("");
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const { data: existingCategories = [] } = useQuery<string[], Error>({
+    queryKey: ['distinctCourseCategories'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('courses')
+        .select('category', { distinct: true });
+      
+      if (error) {
+        console.error("Error fetching distinct categories:", error);
+        return [];
+      }
+      const categories = data?.map(item => item.category).filter(Boolean) as string[] || [];
+      return [...new Set(categories)];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
   if (!isOpen) return null;
 
@@ -39,7 +59,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
     if (!category) {
       toast({
         title: "Gabim!",
-        description: "Ju lutemi zgjidhni një kategori për kursin.",
+        description: "Ju lutemi zgjidhni ose krijoni një kategori për kursin.",
         variant: "destructive",
       });
       return;
@@ -48,29 +68,49 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
     try {
       setIsLoading(true);
       
-      // Generate a placeholder image if none provided
       const image = imageUrl || `https://placehold.co/600x360/${encodeURIComponent("#5C4B3A")}/${encodeURIComponent("#F5F0E6")}?text=${encodeURIComponent(title)}`;
       
+      const courseAccessCode = accessCode || Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      const courseTitle = `${title} [${courseAccessCode}]`;
+      
+      let categoryToSave = '';
+      if (category === '__addNew__') {
+        if (!newCategoryName.trim()) {
+          toast({
+            title: "Gabim!",
+            description: "Ju lutemi shkruani emrin e kategorisë së re.",
+            variant: "destructive",
+          });
+          return;
+        }
+        categoryToSave = newCategoryName.trim();
+      } else {
+        categoryToSave = category;
+      }
+
       const { data, error } = await supabase
         .from('courses')
         .insert({
-          title,
+          title: courseTitle,
           description,
-          category,
+          category: categoryToSave,
           image,
           instructor: user.name,
           instructor_id: user.id,
           status: 'draft',
-          students: 0
+          students: 0,
+          price: isPaid ? Number(price) : null,
+          isPaid: isPaid
         })
         .select()
         .single();
       
       if (error) throw error;
       
-      // Invalidate queries to refetch courses
       queryClient.invalidateQueries({ queryKey: ['courses'] });
       queryClient.invalidateQueries({ queryKey: ['instructorCourses', user.id] });
+      queryClient.invalidateQueries({ queryKey: ['distinctCourseCategories'] });
       
       toast({
         title: "Sukses!",
@@ -82,7 +122,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       }
       
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
       toast({
         title: "Gabim!",
@@ -137,17 +177,29 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
             </label>
             <select
               id="course-category"
-              className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
+              className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown mb-2"
               value={category}
-              onChange={(e) => setCategory(e.target.value as "programim" | "dizajn" | "marketing" | "other" | "")}
-              required
+              onChange={(e) => setCategory(e.target.value)}
+              required={category !== '__addNew__'}
             >
               <option value="">Zgjidhni Kategorinë...</option>
-              <option value="programim">Programim</option>
-              <option value="dizajn">Dizajn</option>
-              <option value="marketing">Marketing</option>
-              <option value="other">Tjetër</option>
+              {existingCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+              <option value="__addNew__">Krijo Kategori të Re...</option>
             </select>
+
+            {category === '__addNew__' && (
+              <input
+                type="text"
+                id="new-category-name"
+                placeholder="Shkruani emrin e kategorisë së re"
+                className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                required
+              />
+            )}
           </div>
           
           <div className="mb-4">
@@ -164,7 +216,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
             ></textarea>
           </div>
           
-          <div className="mb-6">
+          <div className="mb-4">
             <label htmlFor="course-image" className="block mb-2 font-semibold text-brown">
               URL i Imazhit të Kopertinës (Opsional):
             </label>
@@ -176,6 +228,60 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
             />
+          </div>
+          
+          <div className="mb-4">
+            <label htmlFor="access-code" className="block mb-2 font-semibold text-brown">
+              Kodi i Hyrjes (Opsional):
+            </label>
+            <div className="flex items-center">
+              <input
+                type="text"
+                id="access-code"
+                placeholder="p.sh., ABC123"
+                className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
+                value={accessCode}
+                onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+                maxLength={8}
+              />
+              <div className="ml-2 text-xs text-gray-500">
+                <span className="block">Lihet bosh për kod të rastësishëm</span>
+                <span className="block">Studentët kanë nevojë për këtë kod për t'u regjistruar</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mb-4">
+            <div className="flex items-center mb-2">
+              <input
+                type="checkbox"
+                id="is-paid"
+                className="mr-2 h-4 w-4 text-brown focus:ring-brown border-lightGray rounded"
+                checked={isPaid}
+                onChange={(e) => setIsPaid(e.target.checked)}
+              />
+              <label htmlFor="is-paid" className="font-semibold text-brown">
+                Kurs me pagesë
+              </label>
+            </div>
+            {isPaid && (
+              <div className="mt-2">
+                <label htmlFor="course-price" className="block mb-2 font-semibold text-brown">
+                  Çmimi (EUR):
+                </label>
+                <input
+                  type="number"
+                  id="course-price"
+                  placeholder="p.sh., 49.99"
+                  className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                  min="0"
+                  step="0.01"
+                  required={isPaid}
+                />
+              </div>
+            )}
           </div>
           
           <button 
