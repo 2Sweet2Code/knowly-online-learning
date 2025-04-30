@@ -58,7 +58,8 @@ const CourseDetailPage = () => {
         price: data.price,
         isPaid: data.isPaid,
         created_at: data.created_at,
-        updated_at: data.updated_at
+        updated_at: data.updated_at,
+        accessCode: data.accessCode
       } as Course;
     },
     enabled: !!courseId
@@ -96,16 +97,18 @@ const CourseDetailPage = () => {
     if (!courseData) return;
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.functions.invoke('enroll-course', {
-        body: { courseId: courseData.id, accessCode: accessCode }
-      });
-      if (error) throw error;
-      if (data?.error) {
-         toast({ title: "Enrollment Failed", description: data.error, variant: "destructive" });
-      } else {
-         toast({ title: "Success!", description: "You have been enrolled successfully." });
-         setIsEnrolled(true);
+      // Validate access code
+      if (courseData.accessCode && accessCode.trim() !== courseData.accessCode) {
+        toast({ title: "Invalid Code", description: "Access code is incorrect.", variant: "destructive" });
+        return;
       }
+      // Directly insert enrollment record
+      const { error: enrollError } = await supabase
+        .from('enrollments')
+        .insert({ user_id: user.id, course_id: courseData.id, progress: 0, completed: false });
+      if (enrollError) throw enrollError;
+      toast({ title: "Success!", description: "You have been enrolled successfully." });
+      setIsEnrolled(true);
     } catch (err) {
       let errorMessage = "An unexpected error occurred. Please try again.";
       if (err instanceof Error) { errorMessage = err.message; }
