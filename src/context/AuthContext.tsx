@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchAndSetUser = async (userId: string | undefined) => {
     if (!userId) {
-      setUser(null);
+      // No user ID implies guest; ensure loading completes without logout
       return;
     }
     
@@ -77,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       } else if (fetchError) {
         console.error('Error fetching user profile:', fetchError);
-        setUser(null);
+        // Preserve pre-set user when profile fetch fails
         return;
       } else {
         // Assign fetched data (already includes all selected fields)
@@ -185,6 +185,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const getInitialSession = async () => {
       const { data: { session: initialSession } } = await supabase.auth.getSession();
       setSession(initialSession);
+      // Pre-set user from session metadata for instant hydration
+      if (initialSession?.user) {
+        const meta = initialSession.user.user_metadata;
+        setUser({
+          id: initialSession.user.id,
+          name: meta?.name || '',
+          email: initialSession.user.email || '',
+          role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
+          user_metadata: meta,
+        });
+      }
       await fetchAndSetUser(initialSession?.user?.id);
       setIsLoading(false);
     };
@@ -194,6 +205,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
         setSession(currentSession);
+        // Instant user update from session metadata
+        if (currentSession?.user) {
+          const meta = currentSession.user.user_metadata;
+          setUser({
+            id: currentSession.user.id,
+            name: meta?.name || '',
+            email: currentSession.user.email || '',
+            role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
+            user_metadata: meta,
+          });
+        }
         await fetchAndSetUser(currentSession?.user?.id);
         setIsLoading(false);
       }
