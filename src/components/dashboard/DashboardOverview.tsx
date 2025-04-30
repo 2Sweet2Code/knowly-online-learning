@@ -66,12 +66,13 @@ export const DashboardOverview = () => {
   });
 
   const { data: announcements = [], isLoading: isLoadingAnnouncements, error: announcementsError } = useQuery({
-    queryKey: ['announcements'],
+    queryKey: ['instructorAnnouncements', user?.id],
     queryFn: async () => {
       try {
         const { data, error } = await supabase
           .from('announcements')
           .select('*')
+          .eq('instructor_id', user!.id)
           .order('created_at', { ascending: false })
           .limit(5);
         

@@ -180,24 +180,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    let isMounted = true;
+    // On mount: restore session and user
     setIsLoading(true);
+    const getInitialSession = async () => {
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      setSession(initialSession);
+      await fetchAndSetUser(initialSession?.user?.id);
+      setIsLoading(false);
+    };
+    getInitialSession();
 
+    // Subscribe to changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
-        if (!isMounted) return;
-        console.log("Auth state changed:", _event, currentSession?.user?.id);
         setSession(currentSession);
         await fetchAndSetUser(currentSession?.user?.id);
         setIsLoading(false);
       }
     );
-
-    return () => {
-        isMounted = false;
-        subscription.unsubscribe();
-    };
-  }, []);
+    return () => subscription.unsubscribe();
+   }, []);
 
   const getErrorMessage = (error: unknown): string => {
     if (error instanceof AuthError) {
