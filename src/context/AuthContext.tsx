@@ -33,11 +33,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchAndSetUser = async (userId: string | undefined) => {
     if (!userId) {
-      // No user ID implies guest; ensure loading completes without logout
+      setUser(null); 
+      setIsLoading(false); 
       return;
     }
     
-    // Explicitly type the profile variable
     let profile: Database['public']['Tables']['profiles']['Row'] | null = null;
     
     try {
@@ -51,11 +51,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (fetchError && fetchError.code === 'PGRST116') {
         console.log('Profile not found for user, attempting creation...');
-        const creationResult = await createUserProfile(userId); // Call creation
+        const creationResult = await createUserProfile(userId);
 
         if (creationResult) {
           console.log('Profile creation initiated/found existing, now refetching...');
-          // Refetch the profile explicitly after creation/conflict resolution
           const { data: refetchedProfile, error: refetchError } = await supabase
             .from('profiles')
             .select('id, name, role, created_at, updated_at')
@@ -66,126 +65,124 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.error('Error refetching profile after creation attempt:', refetchError);
             profile = null;
           } else {
-            // Remove type assertion
             profile = refetchedProfile;
             console.log('Profile successfully refetched:', profile);
           }
         } else {
-          // Creation failed (and wasn't just a conflict)
           console.error("Profile creation failed, setting profile to null.");
           profile = null;
         }
       } else if (fetchError) {
         console.error('Error fetching user profile:', fetchError);
-        // Preserve pre-set user when profile fetch fails
-        return;
+        return; 
       } else {
-        // Assign fetched data (already includes all selected fields)
-        // Remove type assertion
         profile = fetchedProfile;
       }
       
-      // --- Type Check before setting User State ---
-      // Ensure profile is not null and has the necessary properties of the Row type
-      if (profile && profile.id && profile.created_at && authUserData?.user) { // updated_at can be null
-        // Extract potential metadata safely
+      if (profile && profile.id && profile.created_at && authUserData?.user) { 
         const meta = authUserData.user.user_metadata;
         const userMetadataForState = {
-          name: meta?.name as string | undefined, // Explicitly cast or ensure it's string/undefined
-          role: (meta?.role === 'student' || meta?.role === 'instructor' || meta?.role === 'admin') ? meta.role : undefined, // Validate role
+          name: meta?.name as string | undefined, 
+          role: (meta?.role === 'student' || meta?.role === 'instructor' || meta?.role === 'admin') ? meta.role : undefined, 
           full_name: meta?.full_name as string | undefined
         };
 
-        // At this point, 'profile' conforms to the Row structure we need
         setUser({
           id: userId,
-          name: profile.name || meta?.full_name || authUserData.user.email?.split('@')[0] || 'User',
-          email: authUserData.user.email || '',
-          role: profile.role || userMetadataForState.role || 'student', // Use validated role
-          user_metadata: userMetadataForState // Assign the constructed, type-safe object
+          name: userMetadataForState.name || profile.name || '',
+          email: authUserData?.user?.email || '', 
+          role: userMetadataForState.role || (profile.role as 'student' | 'instructor' | 'admin') || 'student',
+          user_metadata: userMetadataForState 
         });
-        console.log("User state set successfully:", { userId, role: profile.role });
       } else {
-        // Log details if the check fails
-        console.warn("Could not set user state: Check failed.", {
-             hasProfile: !!profile,
-             profileId: profile?.id,
-             profileCreatedAt: profile?.created_at,
-             profileUpdatedAt: profile?.updated_at,
-             hasAuthUser: !!authUserData?.user 
-         });
-        setUser(null);
+        console.error('Profile data is incomplete or null, or auth user not found. Cannot set user state.');
+        setUser(null); 
       }
     } catch (error) {
-      console.error('Critical Error in fetchAndSetUser:', error);
-      setUser(null);
+      console.error('Supabase operation failed in fetchAndSetUser:', error);
+      toast({
+        title: "Gabim",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+      setUser(null); 
+    } finally {
+      setIsLoading(false); 
     }
   };
 
   const createUserProfile = async (userId: string): Promise<Database['public']['Tables']['profiles']['Row'] | null> => {
     try {
-      const { data: authUserData } = await supabase.auth.getUser();
-      if (!authUserData?.user) return null;
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, name, role, created_at, updated_at')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') { 
+        throw fetchError; 
+      }
+
+      if (existingProfile) {
+        console.log('User profile already exists, skipping creation.', existingProfile);
+        return existingProfile;
+      }
+
+      console.log(`Creating new profile for user ID: ${userId}`);
+      const { data: authUserData } = await supabase.auth.getUser(); 
+      if (!authUserData?.user) {
+        console.error('Auth user not found during profile creation.');
+        return null;
+      }
       
-      const profileData = {
-        id: userId,
-        name: authUserData.user.user_metadata?.full_name || authUserData.user.email?.split('@')[0] || 'User',
-        role: authUserData.user.user_metadata?.role || 'student',
-        bio: null // Initialize bio as null
-      };
-      
-      // --- DEBUG: Isolate the insert operation --- 
-      console.log("Attempting to insert profile data:", profileData);
-      // Remove .select('*').single() for now
-      const { data: insertData, error: insertError } = await supabase
-          .from('profiles')
-          .insert(profileData);
-          // .select('*') 
-          // .single();
-      
-      // Log the result of the plain insert
-      console.log("Insert Result:", { insertData, insertError });
+      let roleToSet: 'student' | 'instructor' | 'admin' = 'student'; 
+      const metaRole = authUserData.user.user_metadata?.role;
+      if (metaRole === 'student' || metaRole === 'instructor' || metaRole === 'admin') {
+        roleToSet = metaRole;
+      }
+
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert({ 
+          id: userId, 
+          name: authUserData.user.user_metadata?.name || 'Emri i panjohur', 
+          role: roleToSet, 
+          created_at: new Date().toISOString(), 
+          updated_at: new Date().toISOString()  
+        })
+        .select('id, name, role, created_at, updated_at')
+        .single();
 
       if (insertError) {
-        console.error('Error during profile insert operation:', insertError);
-        // Check for unique constraint violation (profile might already exist due to race condition)
-        if (insertError.code === '23505') { // Unique violation code
-            console.warn('Profile likely already exists (unique violation on insert).');
-            // If insert failed due to conflict, we still need to return something? Maybe refetch?
-            // For now, let's explicitly return null or attempt fetch
-            return null; // Or attempt fetch like before?
-        }
-        return null; // Return null for other insert errors
-      }
-      
-      // If insert succeeded, we need to refetch the data since we removed .select()
-      console.log("Profile insert reported success, refetching...");
-      const { data: refetchedProfile, error: refetchError } = await supabase
-          .from('profiles')
-          .select('*') // Select all columns to match Row type
-          .eq('id', userId)
-          .single();
-
-      if (refetchError) {
-          console.error('Failed to fetch profile after successful insert:', refetchError);
-          return null;
+        console.error('Error inserting new profile:', insertError);
+        throw insertError; 
       }
 
-      console.log("Profile created or found successfully:", refetchedProfile);
-      return refetchedProfile; // Return the fetched profile data
+      console.log('New profile created successfully:', newProfile);
+      return newProfile;
+
     } catch (error) {
-      console.error('Exception in createUserProfile:', error);
+      console.error('Error during profile creation or check:', error);
+      toast({
+        title: "Gabim në krijimin e profilit",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
       return null;
     }
   };
 
+
   useEffect(() => {
-    // On mount: restore session and user
-    setIsLoading(true);
     const getInitialSession = async () => {
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      setIsLoading(true); 
+      const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error("Error fetching initial session:", error);
+        await fetchAndSetUser(undefined); 
+        return;
+      }
       setSession(initialSession);
-      // Pre-set user from session metadata for instant hydration
       if (initialSession?.user) {
         const meta = initialSession.user.user_metadata;
         setUser({
@@ -196,16 +193,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           user_metadata: meta,
         });
       }
-      await fetchAndSetUser(initialSession?.user?.id);
-      setIsLoading(false);
+      await fetchAndSetUser(initialSession?.user?.id); 
     };
     getInitialSession();
 
-    // Subscribe to changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
+        setIsLoading(true); 
         setSession(currentSession);
-        // Instant user update from session metadata
         if (currentSession?.user) {
           const meta = currentSession.user.user_metadata;
           setUser({
@@ -215,9 +210,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
             user_metadata: meta,
           });
+        } else {
+          setUser(null); 
         }
         await fetchAndSetUser(currentSession?.user?.id);
-        setIsLoading(false);
       }
     );
     return () => subscription.unsubscribe();
@@ -225,7 +221,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const getErrorMessage = (error: unknown): string => {
     if (error instanceof AuthError) {
-        // Handle specific Supabase Auth errors
         switch (error.message) {
           case 'Invalid login credentials':
             return 'Email ose fjalëkalimi i pavlefshëm.';
@@ -239,15 +234,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return error.message || 'Ndodhi një gabim gjatë vërtetimit.';
         }
     } else if (error instanceof Error) {
-        // Handle generic JavaScript errors
         return error.message;
     } else {
-        // Handle other unknown error types
         return 'Ndodhi një gabim i papritur.';
     }
   };
 
   const login = async (email: string, password: string) => {
+    setIsLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -265,10 +259,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
+      setIsLoading(false); 
     }
   };
 
   const signup = async (name: string, email: string, password: string, role: 'student' | 'instructor') => {
+    setIsLoading(true);
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -281,9 +277,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       });
       if (error) throw error;
-      if (data.user) {
-        await createUserProfile(data.user.id);
-      }
       toast({
         title: "Llogaria u krijua!",
         description: "Ju jeni regjistruar me sukses.",
@@ -295,6 +288,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
+      setIsLoading(false); 
     }
   };
 
@@ -316,6 +310,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
+      setIsLoading(false); 
     }
   };
 
@@ -323,7 +318,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider value={{ 
       user, 
       session,
-      isAuthenticated: !!user, 
+      isAuthenticated: !!user && !!session, 
       isLoading, 
       login, 
       signup, 
