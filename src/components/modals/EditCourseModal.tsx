@@ -28,6 +28,7 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
   const [isPaid, setIsPaid] = useState(course.isPaid || false);
   const [price, setPrice] = useState<number | "">(course.price || "");
   const [isLoading, setIsLoading] = useState(false);
+  const [allowAdminApplications, setAllowAdminApplications] = useState(course.allow_admin_applications ?? true);
 
   useEffect(() => {
     // Update state when course prop changes
@@ -38,6 +39,7 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
     setAccessCode(course.accessCode || "");
     setIsPaid(course.isPaid || false);
     setPrice(course.price || "");
+    setAllowAdminApplications(course.allow_admin_applications ?? true);
   }, [course]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,7 +81,8 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
           image: imageUrl,
           price: isPaid ? Number(price) : null,
           isPaid: isPaid,
-          accessCode: accessCode || null
+          accessCode: accessCode || null,
+          allow_admin_applications: allowAdminApplications
         })
         .eq('id', course.id)
         .select()
@@ -208,7 +211,7 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
               <input
                 type="checkbox"
                 id="is-paid"
-                className="mr-2 h-4 w-4 text-brown focus:ring-brown border-lightGray rounded"
+                className="mr-2 h-4 w-4 text-brown border-lightGray rounded focus:ring-brown"
                 checked={isPaid}
                 onChange={(e) => setIsPaid(e.target.checked)}
               />
@@ -236,6 +239,19 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
             )}
           </div>
           
+          <div className="mb-4">
+            <label htmlFor="edit-course-allow-admin-applications" className="flex items-center text-sm font-medium text-gray-700 hover:text-brown cursor-pointer">
+              <input
+                type="checkbox"
+                id="edit-course-allow-admin-applications"
+                className="h-4 w-4 text-brown border-lightGray rounded focus:ring-brown mr-2 cursor-pointer"
+                checked={allowAdminApplications}
+                onChange={(e) => setAllowAdminApplications(e.target.checked)}
+              />
+              Lejo aplikimet për administratorë për këtë kurs
+            </label>
+          </div>
+
           <DialogFooter>
             <button 
               type="button" 

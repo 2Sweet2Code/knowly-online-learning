@@ -25,6 +25,7 @@ export interface Course {
   isPaid?: boolean;
   created_at?: string;
   updated_at?: string;
+  allow_admin_applications?: boolean;
 }
 
 export interface Enrollment {
