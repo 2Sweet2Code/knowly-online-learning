@@ -55,14 +55,11 @@ const AdminApplyCoursesPage = () => {
         throw new Error("Unexpected response from Supabase: coursesData is not an array");
       }
 
-      // DEBUG: Select all columns to check Supabase schema visibility
-      const { data: existingApplications, error: appsError }: {
-        data: Database['public']['Tables']['course_admins']['Row'][] | null;
-        error: PostgrestError | null;
-      } = await supabase
+      // Fetch existing applications with a more flexible type approach
+      const { data: existingApplications, error: appsError } = await supabase
         .from('course_admins')
         .select('*')
-        .eq('user_id', user.id as Database['public']['Tables']['course_admins']['Row']['user_id']);
+        .eq('user_id', user.id);
       console.log('DEBUG existingApplications:', existingApplications);
 
       if (appsError) {

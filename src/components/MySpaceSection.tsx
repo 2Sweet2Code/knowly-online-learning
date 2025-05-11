@@ -5,10 +5,13 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Course } from "../types";
 import { useQuery } from "@tanstack/react-query";
+import { GraduationCap } from "lucide-react";
 
 interface EnrolledCourse extends Course {
   progress: number;
   completed: boolean;
+  grade?: number | null;
+  feedback?: string | null;
 }
 
 export const MySpaceSection = () => {
@@ -45,9 +48,41 @@ export const MySpaceSection = () => {
         return [];
       }
       
-      // Map enrollments with courses
+      // Get grades if available
+      let grades: Array<{course_id: string; grade: number | null; feedback: string | null}> = [];
+      try {
+        // Use a more generic approach to handle the case where the table might not exist yet
+        const gradesResponse = await supabase.rpc('get_student_grades', {
+          user_id_param: user.id,
+          course_ids_param: enrolledCourseIds
+        }).catch(() => {
+          // If the RPC function doesn't exist, try direct query with error handling
+          return { data: null, error: new Error('RPC not available') };
+        });
+        
+        if (gradesResponse.data) {
+          grades = gradesResponse.data;
+        } else {
+          // Fallback to localStorage if available
+          const localGrades = localStorage.getItem(`student_grades_${user.id}`);
+          if (localGrades) {
+            try {
+              grades = JSON.parse(localGrades);
+            } catch (e) {
+              console.error('Error parsing local grades:', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching grades:', error);
+        // Continue without grades if table doesn't exist yet
+      }
+      
+      // Map enrollments with courses and grades
       return courses.map(course => {
         const enrollment = enrollments.find(e => e.course_id === course.id);
+        const grade = grades.find(g => g.course_id === course.id);
+        
         return {
           id: course.id,
           title: course.title,
@@ -60,6 +95,8 @@ export const MySpaceSection = () => {
           status: course.status as 'active' | 'draft',
           progress: enrollment?.progress || 0,
           completed: enrollment?.completed || false,
+          grade: grade?.grade || null,
+          feedback: grade?.feedback || null,
         };
       });
     },
@@ -110,21 +147,33 @@ export const MySpaceSection = () => {
               </Link>
             </div>
 
-            {/* Certificates */}
+            {/* Grades */}
             <div className="bg-cream p-6 rounded-lg border border-lightGray">
-              <h4 className="text-xl font-playfair font-bold text-brown mb-4">Certifikatat e Fituara</h4>
-              {enrolledCourses.filter(c => c.completed).length > 0 ? (
-                <ul className="list-disc pl-5 space-y-2">
+              <h4 className="text-xl font-playfair font-bold text-brown mb-4 flex items-center gap-2">
+                <GraduationCap className="h-5 w-5" />
+                Notat e Mia
+              </h4>
+              {enrolledCourses.filter(c => c.grade !== null).length > 0 ? (
+                <div className="space-y-3">
                   {enrolledCourses
-                    .filter(c => c.completed)
+                    .filter(c => c.grade !== null)
                     .map((course) => (
-                      <li key={course.id}>
-                        {course.title}
-                      </li>
+                      <div key={course.id} className="border-b border-lightGray pb-2 last:border-0">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">{course.title}</span>
+                          <span className="text-lg font-bold text-brown">{course.grade}/10</span>
+                        </div>
+                        {course.feedback && (
+                          <p className="text-sm text-gray-600 mt-1 italic">Feedback: {course.feedback}</p>
+                        )}
+                      </div>
                     ))}
-                </ul>
+                </div>
               ) : (
-                <p className="text-gray-600">Ende nuk keni përfunduar asnjë kurs.</p>
+                <div className="text-gray-600">
+                  <p>Nuk keni marrë ende nota.</p>
+                  <p className="text-sm mt-2">Notat do të shfaqen këtu pasi instruktori t'i vendosë ato.</p>
+                </div>
               )}
             </div>
 

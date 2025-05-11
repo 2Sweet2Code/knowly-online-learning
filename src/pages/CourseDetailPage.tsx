@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "../context/AuthContext";
-import { Loader2, MessageSquare, User, Clock, Users, AlertCircle } from "lucide-react";
+import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
 import type { PostgrestError } from '@supabase/postgrest-js';
@@ -13,21 +13,14 @@ import type { Database } from '@/integrations/supabase/types';
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { ClassmatesList } from "../components/ClassmatesList";
+import { StudentGradesList } from "../components/StudentGradesList";
+import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
+import { CourseComment, getCourseComments, insertCourseComment } from "@/types/course-comments";
 
-// Define the CourseComment type for the course_comments table
-type CourseComment = {
-  id: string;
-  course_id: string;
-  user_id: string;
-  content: string;
-  is_public: boolean;
-  created_at: string;
-  user_name?: string;
-  status?: string;
-};
+// CourseComment type is now imported from @/types/course-comments
 
 const CourseDetailPage = () => {
-  const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'settings'>('stream');
+  const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'grades' | 'settings'>('stream');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -40,6 +33,7 @@ const CourseDetailPage = () => {
   const [commentText, setCommentText] = useState("");
   const [isPublicComment, setIsPublicComment] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
 
   // Fetch course details
   const { data: courseData, isLoading: queryLoading } = useQuery({
@@ -169,12 +163,8 @@ const CourseDetailPage = () => {
       if (!courseId) return [];
       
       try {
-        // Use the new course_comments table with type assertion
-        const { data, error } = await supabase
-          .from('course_comments' as any)
-          .select('*')
-          .eq('course_id', courseId)
-          .order('created_at', { ascending: false });
+        // Use the helper function for type-safe access to course_comments
+        const { data, error } = await getCourseComments(supabase, courseId);
         
         if (error) throw error;
         return data || [];
@@ -206,10 +196,8 @@ const CourseDetailPage = () => {
         status: 'active'
       };
       
-      // Insert directly into the course_comments table with type assertion
-      const { error } = await supabase
-        .from('course_comments' as any)
-        .insert(commentData);
+      // Use our helper function to insert the comment
+      const { error } = await insertCourseComment(supabase, commentData);
       
       if (error) {
         console.error('Error submitting comment:', error);
@@ -280,27 +268,30 @@ const CourseDetailPage = () => {
       // Ensure correct import at the top:
       // import type { Database } from '@/types/supabase';
       // import { PostgrestError } from '@supabase/supabase-js';
-      // Query for admin status using up-to-date types
-      // Cast variables to their strict types from generated Supabase types
-      const typedCourseId = courseId as Database['public']['Tables']['course_admins']['Row']['course_id'];
-      const typedUserId = user.id as Database['public']['Tables']['course_admins']['Row']['user_id'];
-      const approvedStatus = 'approved' as Database['public']['Tables']['course_admins']['Row']['status'];
-      const { data, error }: {
-        data: Database['public']['Tables']['course_admins']['Row'] | null;
-        error: PostgrestError | null;
-      } = await supabase
-        .from('course_admins')
-        .select('id, status')
-        .eq('course_id', typedCourseId)
-        .eq('user_id', typedUserId)
-        .eq('status', approvedStatus)
-        .maybeSingle();
-      if (error) {
-        console.error('Error checking admin status:', error.message);
+      try {
+        // Query for admin status with simpler typing
+        const { data, error } = await supabase
+          .from('course_admins')
+          .select('id, status')
+          .eq('course_id', courseId)
+          .eq('user_id', user.id)
+          .eq('status', 'approved')
+          .maybeSingle();
+          
+        if (error) {
+          console.error('Error checking admin status:', error.message);
+          return false;
+        }
+        
+        // Defensive: only consider as admin if row exists and has approved status
+        // Use a simpler type check to avoid deep type instantiation
+        if (!data) return false;
+        const adminData = data as { status?: string };
+        return adminData.status === 'approved';
+      } catch (err) {
+        console.error('Unexpected error checking admin status:', err);
         return false;
       }
-      // Defensive: only consider as admin if row exists and status is approved
-      return !!data && data.status === 'approved';
     },
     enabled: !!user?.id && !!courseId,
     staleTime: 5 * 60 * 1000,
@@ -344,16 +335,24 @@ const CourseDetailPage = () => {
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-lightGray flex flex-col py-8 px-4">
-        <h2 className="text-xl font-playfair font-bold mb-8">{cleanTitle}</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-playfair font-bold">{cleanTitle}</h2>
+          <Link to="/" className="text-brown hover:text-gold transition-colors">
+            <Home className="h-5 w-5" />
+          </Link>
+        </div>
         <nav className="flex flex-col gap-2">
           <button className={`flex items-center gap-2 px-4 py-2 rounded transition ${tab === 'stream' ? 'bg-cream font-semibold' : 'hover:bg-cream/50'}`} onClick={() => setTab('stream')}>
-            <span>📢</span> Stream
+            <Bell className="h-4 w-4" /> Stream
           </button>
           <button className={`flex items-center gap-2 px-4 py-2 rounded transition ${tab === 'content' ? 'bg-cream font-semibold' : 'hover:bg-cream/50'}`} onClick={() => setTab('content')}>
             <span>📚</span> Përmbajtja
           </button>
           <button className={`flex items-center gap-2 px-4 py-2 rounded transition ${tab === 'students' ? 'bg-cream font-semibold' : 'hover:bg-cream/50'}`} onClick={() => setTab('students')}>
-            <span>👥</span> Studentët
+            <Users className="h-4 w-4" /> Studentët
+          </button>
+          <button className={`flex items-center gap-2 px-4 py-2 rounded transition ${tab === 'grades' ? 'bg-cream font-semibold' : 'hover:bg-cream/50'}`} onClick={() => setTab('grades')}>
+            <GraduationCap className="h-4 w-4" /> Notat
           </button>
           <button className={`flex items-center gap-2 px-4 py-2 rounded transition ${tab === 'settings' ? 'bg-cream font-semibold' : 'hover:bg-cream/50'}`} onClick={() => setTab('settings')}>
             <span>⚙️</span> Cilësimet
@@ -368,9 +367,21 @@ const CourseDetailPage = () => {
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-bold font-playfair">Njoftime</h3>
               {(isInstructor || user?.role === 'admin' || isClassAdmin) ? (
-                <button className="btn bg-gold text-brown font-semibold">Publiko Njoftim</button>
+                <button 
+                  className="btn bg-gold text-brown font-semibold"
+                  onClick={() => setIsAnnouncementModalOpen(true)}
+                >
+                  Publiko Njoftim
+                </button>
               ) : null}
             </div>
+            
+            {/* Announcement Modal */}
+            <AnnouncementModal 
+              isOpen={isAnnouncementModalOpen} 
+              onClose={() => setIsAnnouncementModalOpen(false)} 
+              courseId={courseId}
+            />
             {/* Announcements list placeholder */}
             <div className="space-y-4 mb-8">
               <div className="bg-white rounded shadow px-4 py-3">
@@ -479,6 +490,13 @@ const CourseDetailPage = () => {
           <section>
             <h3 className="text-2xl font-bold font-playfair mb-6">Studentët</h3>
             <ClassmatesList courseId={courseData.id} />
+          </section>
+        )}
+        {/* Grades Tab */}
+        {tab === 'grades' && (
+          <section>
+            <h3 className="text-2xl font-bold font-playfair mb-6">Notat</h3>
+            <StudentGradesList courseId={courseData.id} />
           </section>
         )}
         {/* Settings Tab */}
