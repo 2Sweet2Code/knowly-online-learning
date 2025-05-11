@@ -1,7 +1,7 @@
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/7b1ed21f-0646-4a7a-94b2-7740715391da
+**URL**: [Knowly](https://knowly-online-learning.vercel.app/)
 
 # 🌠Knowly
 
