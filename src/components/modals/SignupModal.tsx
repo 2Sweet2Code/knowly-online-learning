@@ -15,7 +15,7 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState<"student" | "instructor" | "">("");
+  const [role, setRole] = useState<"student" | "instructor" | "admin" | "">("");
   const [localLoading, setLocalLoading] = useState(false);
   const { signup, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
@@ -158,13 +158,14 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
               id="signup-role"
               className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
               value={role}
-              onChange={(e) => setRole(e.target.value as "student" | "instructor" | "")}
+              onChange={(e) => setRole(e.target.value as "student" | "instructor" | "admin" | "")}
               disabled={showLoading}
               required
             >
               <option value="">Zgjidhni Rolin...</option>
               <option value="student">Student</option>
               <option value="instructor">Instruktor</option>
+              <option value="admin">Admin</option>
             </select>
           </div>
           
