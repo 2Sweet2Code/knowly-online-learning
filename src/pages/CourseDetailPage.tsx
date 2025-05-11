@@ -15,8 +15,6 @@ const CourseDetailPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [course, setCourse] = useState<Course | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessCode, setAccessCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,12 +34,7 @@ const CourseDetailPage = () => {
       
       if (error) {
         console.error('Error fetching course:', error);
-        toast({
-          title: "Gabim!",
-          description: "Ndodhi një problem gjatë ngarkimit të kursit. Ju lutemi provoni përsëri.",
-          variant: "destructive",
-        });
-        navigate('/courses');
+        setError('Ky kurs nuk u gjet ose nuk ekziston më.');
         return null;
       }
       
@@ -62,32 +55,49 @@ const CourseDetailPage = () => {
         accessCode: data.accessCode
       } as Course;
     },
-    enabled: !!courseId
+    enabled: !!courseId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Check if user is enrolled
+  // Always call useEffect, but only run logic if no error
   useEffect(() => {
+    if (error) return; // Don't run if there's a 404
     const checkEnrollment = async () => {
       if (!user || !courseData) return;
-      
       const { data, error } = await supabase
         .from('enrollments')
         .select('*')
         .eq('user_id', user.id)
         .eq('course_id', courseData.id)
         .maybeSingle();
-      
       if (error) {
         console.error('Error checking enrollment:', error);
         return;
       }
-      
       setIsEnrolled(!!data);
     };
-    
     checkEnrollment();
-  }, [user, courseData]);
+  }, [user, courseData, error]);
 
+  // Show a 404 error if course not found
+  if (error) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Header />
+        <main className="flex-grow flex items-center justify-center bg-cream">
+          <div className="bg-white p-10 rounded shadow text-center">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2">404: Kursi nuk u gjet</h1>
+            <p className="mb-4">Ky kurs nuk ekziston ose është fshirë.</p>
+            <button className="btn btn-primary" onClick={() => navigate('/courses')}>Kthehu te Kurset</button>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Enroll handler must be a function, not floating code
   const handleEnroll = async () => {
     if (!user) {
       toast({ title: "Error", description: "Please log in to enroll.", variant: "destructive" });
@@ -210,88 +220,64 @@ const CourseDetailPage = () => {
             <div className="flex flex-col md:flex-row gap-8">
               <div className="md:w-1/3">
                 <img 
-                  src={courseData.image || "https://via.placeholder.com/400x220/d3c1ae/8b5e3c?text=Pa+Imazh"} 
+                  src={courseData.image || "/fallback-image.png"} 
                   alt={cleanTitle} 
-                  className="rounded-lg w-full h-auto object-cover"
                   onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    const placeholder = "https://via.placeholder.com/400x220/d3c1ae/8b5e3c?text=Pa+Imazh";
-                    if (target.src !== placeholder) { 
-                         target.src = placeholder;
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src !== '/fallback-image.png') {
+                      target.src = '/fallback-image.png';
                     }
                   }}
+                  className="rounded-lg w-full h-auto object-cover"
                 />
               </div>
               <div className="md:w-2/3">
                 <div className="flex flex-wrap gap-2 mb-4">
                   <span className="px-3 py-1 bg-gold text-brown text-sm font-semibold rounded-full">
-                    {courseData.category === 'programim' ? 'Programim' : 
-                     courseData.category === 'dizajn' ? 'Dizajn' : 
-                     courseData.category === 'marketing' ? 'Marketing' : 'Tjetër'}
+                    {courseData.category === 'programim' ? 'Programim' :
+                      courseData.category === 'dizajn' ? 'Dizajn' :
+                        courseData.category === 'marketing' ? 'Marketing' : 'Tjetër'}
                   </span>
                   {courseData.isPaid && (
-                    <span className="px-3 py-1 bg-white text-brown text-sm font-semibold rounded-full">
+                    <span className="px-3 py-1 bg-cream text-brown text-sm font-semibold rounded-full">
                       Me pagesë
                     </span>
                   )}
                 </div>
-                <h1 className="text-3xl md:text-4xl font-playfair font-bold mb-4">
-                  {cleanTitle}
-                </h1>
-                <p className="mb-6 text-lg">
-                  {courseData.description}
-                </p>
-                <div className="flex flex-wrap gap-6 mb-8">
-                  <div className="flex items-center">
-                    <Users className="mr-2 h-5 w-5" />
+                <h2 className="text-2xl font-bold mb-2 font-playfair">{courseData.title}</h2>
+                <p className="text-gray-700 mb-4">{courseData.description}</p>
+                <div className="flex items-center gap-6 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-brown" />
                     <span>{courseData.students} studentë</span>
                   </div>
-                  <div className="flex items-center">
-                    <BookOpen className="mr-2 h-5 w-5" />
-                    <span>Instruktor: {courseData.instructor}</span>
-                  </div>
-                  <div className="flex items-center">
-                    <Calendar className="mr-2 h-5 w-5" />
-                    <span>Krijuar: {new Date(courseData.created_at || '').toLocaleDateString()}</span>
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-5 w-5 text-brown" />
+                    <span>nga: {courseData.instructor}</span>
                   </div>
                 </div>
-                
                 <div className="mt-6">
                   {isEnrolled ? (
                     <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md">
                       <p className="font-semibold">Ju jeni regjistruar në këtë kurs.</p>
-                      <button 
-                        onClick={() => navigate('/my-space')} 
-                        className="mt-2 btn btn-secondary btn-sm"
-                      >
-                        Shko te Kurset e Mia
-                      </button>
-                    </div>
-                  ) : isInstructor ? (
-                    <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded-md">
-                      <p className="font-semibold">Ju jeni instruktori i këtë kurs.</p>
-                      <button 
-                        onClick={() => navigate(`/dashboard/courses/${courseId}`)}
-                        className="mt-2 btn btn-secondary btn-sm"
-                      >
-                        Menaxho Kursin
-                      </button>
                     </div>
                   ) : courseData.isPaid ? (
                     <div className="p-6 border rounded-lg bg-gray-50">
                       <h3 className="text-lg font-semibold mb-3">Regjistrohu në Kurs (€{courseData.price})</h3>
-                      <p className="text-sm text-gray-600 mb-4">Për të aksesuar këtë kurs, ju lutemi kryeni pagesën e sigurt përmes PayPal.</p>
+                      <p className="text-sm text-gray-600 mb-4">
+                        Për të aksesuar këtë kurs, ju lutemi kryeni pagesën e sigurt përmes PayPal.
+                      </p>
                       {isSubmitting ? (
-                         <div className="flex justify-center items-center py-4">
-                           <Loader2 className="h-5 w-5 animate-spin mr-2" /> Duke procesuar pagesën...
-                         </div>
+                        <div className="flex justify-center items-center py-4">
+                          <Loader2 className="h-5 w-5 animate-spin mr-2" /> Duke procesuar pagesën...
+                        </div>
                       ) : (
-                        <PayPalButtons 
-                          style={{ layout: "vertical", color: "blue", shape: "rect", label: "pay" }}
+                        <PayPalButtons
+                          style={{ layout: 'vertical', color: 'blue', shape: 'rect', label: 'pay' }}
                           createOrder={(data, actions) => {
                             if (!courseData.price) {
-                                console.error("Course price is missing. Cannot create order.");
-                                return Promise.reject(new Error("Course price missing")); 
+                              console.error("Course price is missing. Cannot create order.");
+                              return Promise.reject(new Error("Course price missing")); 
                             }
                             return actions.order.create({
                               intent: "CAPTURE",

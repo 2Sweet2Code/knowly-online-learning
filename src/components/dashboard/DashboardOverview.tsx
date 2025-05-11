@@ -25,23 +25,30 @@ export const DashboardOverview = () => {
     courses: { title: string } | null; 
   };
 
+  // Debug logging
+  console.log("user", user);
+  
+  const isInstructor = user?.role === 'instructor';
+  const isAdmin = user?.role === 'admin';
+
   const { 
     data: courses = [], 
     isLoading: isLoadingCourses, 
     isError: isCoursesError, 
     error: coursesError 
   } = useQuery<Course[], Error>({
-    queryKey: ['instructorCourses', user?.id],
+    queryKey: ['dashboardCourses', user?.id, user?.role],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data, error } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('instructor_id', user.id)
-        .order('created_at', { ascending: false });
-      
+      let query = supabase.from('courses').select('*');
+      if (isInstructor) {
+        query = query.eq('instructor_id', user.id);
+      } else if (isAdmin) {
+        query = query.eq('status', 'active'); // Admins see all active courses
+      }
+      const { data, error } = await query.order('created_at', { ascending: false });
       if (error) {
-        console.error("Error fetching instructor courses for overview:", error);
+        console.error("Error fetching courses for overview:", error);
         throw error;
       }
       return data?.map(course => ({
@@ -64,6 +71,8 @@ export const DashboardOverview = () => {
     enabled: !!user?.id,
     staleTime: 1000 * 60 * 5,
   });
+  console.log("isLoadingCourses", isLoadingCourses);
+  console.log("courses", courses);
 
   const { data: announcements = [], isLoading: isLoadingAnnouncements, error: announcementsError } = useQuery({
     queryKey: ['instructorAnnouncements', user?.id],
