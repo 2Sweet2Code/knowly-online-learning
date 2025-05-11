@@ -4,7 +4,14 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Profile } from "@/types";
+import type { Profile, CourseAdmin } from "@/types";
+import { Database } from "@/integrations/supabase/types";
+
+// Define a type that extends the Supabase course_admins type with the missing fields
+type CourseAdminInsert = Database["public"]["Tables"]["course_admins"]["Insert"] & {
+  status: 'pending' | 'approved' | 'rejected';
+  reason?: string | null;
+};
 
 interface ManageCourseAdminsModalProps {
   isOpen: boolean;
@@ -75,7 +82,8 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
 
       if (!data) return [];
 
-      const formattedData: AdminRequest[] = data.map((req: CourseAdminWithProfile) => ({
+      // Cast the data to our extended type that includes status and reason fields
+      const formattedData: AdminRequest[] = (data as unknown as CourseAdminWithProfile[]).map((req) => ({
           id: req.id,
           user_id: req.user_id,
           userName: req.profiles?.name || 'Unknown User',

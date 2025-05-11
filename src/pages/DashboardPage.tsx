@@ -15,6 +15,7 @@ import { CreateCourseModal } from "../components/modals/CreateCourseModal";
 import { useAuth } from "../context/AuthContext";
 import { Navigate, Routes, Route, Outlet } from "react-router-dom";
 import CourseManagementPage from "./CourseManagementPage";
+import AdminApplyCoursesPage from "./AdminApplyCoursesPage";
 
 const DashboardPage = () => {
   const { user, isLoading } = useAuth();
@@ -69,6 +70,7 @@ const DashboardPage = () => {
                   <>
                     <Route path="user-management" element={<DashboardUserManagement />} />
                     <Route path="content-moderation" element={<DashboardContentModeration />} />
+                    <Route path="apply-courses" element={<AdminApplyCoursesPage />} />
                   </>
                 )}
                 

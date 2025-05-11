@@ -21,6 +21,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
   const [isPaid, setIsPaid] = useState(false);
   const [price, setPrice] = useState<number | "">("");
   const [isLoading, setIsLoading] = useState(false);
+  const [allowAdminApplications, setAllowAdminApplications] = useState(true);
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -30,7 +31,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
     queryFn: async () => {
       const { data, error } = await supabase
         .from('courses')
-        .select('category', { distinct: true });
+        .select('category');
       
       if (error) {
         console.error("Error fetching distinct categories:", error);
@@ -101,7 +102,8 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
           status: 'draft',
           students: 0,
           price: isPaid ? Number(price) : null,
-          isPaid: isPaid
+          isPaid: isPaid,
+          allow_admin_applications: allowAdminApplications
         })
         .select()
         .single();
@@ -282,6 +284,19 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
                 />
               </div>
             )}
+          </div>
+          
+          <div className="mb-4">
+            <label htmlFor="course-allow-admin-applications" className="flex items-center text-sm font-medium text-gray-700 hover:text-brown cursor-pointer">
+              <input
+                type="checkbox"
+                id="course-allow-admin-applications"
+                className="h-4 w-4 text-brown border-lightGray rounded focus:ring-brown mr-2 cursor-pointer"
+                checked={allowAdminApplications}
+                onChange={(e) => setAllowAdminApplications(e.target.checked)}
+              />
+              Lejo aplikimet për administratorë për këtë kurs
+            </label>
           </div>
           
           <button 

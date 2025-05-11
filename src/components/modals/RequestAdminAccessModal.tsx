@@ -4,7 +4,14 @@ import { useAuth } from "../../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Course } from "@/types";
+import { Course, CourseAdmin } from "@/types";
+import { Database } from "@/integrations/supabase/types";
+
+// Define a type that extends the Supabase course_admins type with the missing fields
+type CourseAdminInsert = Database["public"]["Tables"]["course_admins"]["Insert"] & {
+  status: 'pending' | 'approved' | 'rejected';
+  reason?: string | null;
+};
 
 interface RequestAdminAccessModalProps {
   isOpen: boolean;
@@ -36,16 +43,29 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
     try {
       setIsLoading(true);
       
-      // Since the course_admins table might not exist yet, we'll use localStorage as a temporary solution
-      // In production, this should use the database table
-      const localStorageKey = `admin_request_${course.id}_${user.id}`;
-      const existingRequest = localStorage.getItem(localStorageKey);
+      // Check if the user already has a request for this course
+      const { data: existingRequest, error: fetchError } = await supabase
+        .from('course_admins')
+        .select('*')
+        .eq('course_id', course.id)
+        .eq('user_id', user.id)
+        .single();
       
-      // No need to check for errors since we're using localStorage
+      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned" error
+        console.error("Error checking for existing request:", fetchError);
+        toast({
+          title: "Gabim!",
+          description: "Ndodhi një problem gjatë kontrollit për kërkesa ekzistuese. Ju lutemi provoni përsëri.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
       
       if (existingRequest) {
-        const requestData = JSON.parse(existingRequest);
-        const status = requestData.status === 'pending' ? 'në pritje' : 'e aprovuar';
+        // Cast the existingRequest to our extended type
+        const adminRequest = existingRequest as unknown as CourseAdminInsert;
+        const status = adminRequest.status === 'pending' ? 'në pritje' : 'e aprovuar';
         toast({
           title: "Informacion",
           description: `Ju tashmë keni një kërkesë ${status} për këtë kurs.`,
@@ -54,18 +74,29 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
         return;
       }
       
-      // Store the admin request in localStorage as a temporary solution
-      // In production, this should be stored in the database
-      const requestData = {
-        id: Date.now().toString(),
+      // Prepare the admin request data with our extended type
+      const adminRequestData: CourseAdminInsert = {
         course_id: course.id,
         user_id: user.id,
         status: 'pending',
-        reason: reason,
-        created_at: new Date().toISOString()
+        reason: reason
       };
       
-      localStorage.setItem(localStorageKey, JSON.stringify(requestData));
+      // Insert the new admin request into the database
+      const { error: insertError } = await supabase
+        .from('course_admins')
+        .insert(adminRequestData as Database["public"]["Tables"]["course_admins"]["Insert"]);
+      
+      if (insertError) {
+        console.error("Error submitting admin request:", insertError);
+        toast({
+          title: "Gabim!",
+          description: "Ndodhi një problem gjatë dërgimit të kërkesës. Ju lutemi provoni përsëri.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
       
       toast({
         title: "Sukses!",
