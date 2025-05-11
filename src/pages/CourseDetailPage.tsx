@@ -9,8 +9,12 @@ import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { Loader2, BookOpen, Users, Calendar, Clock, Award, ShoppingCart, AlertCircle, KeyRound, LogIn } from "lucide-react";
 import { PayPalButtons } from "@paypal/react-paypal-js";
+import { ClassmatesList } from "../components/ClassmatesList";
+import { AssignmentsSection } from "../components/AssignmentsSection";
+
 
 const CourseDetailPage = () => {
+  const [tab, setTab] = useState<'classmates' | 'assignments'>('classmates');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -258,9 +262,30 @@ const CourseDetailPage = () => {
                 </div>
                 <div className="mt-6">
                   {isEnrolled ? (
-                    <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md">
-                      <p className="font-semibold">Ju jeni regjistruar në këtë kurs.</p>
-                    </div>
+  <div>
+    <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-md mb-4">
+      <p className="font-semibold">Ju jeni regjistruar në këtë kurs.</p>
+    </div>
+    {/* Tabs for classmates and assignments */}
+    <div className="mt-4">
+      <div className="flex border-b border-lightGray mb-4">
+        <button
+          className={`px-4 py-2 font-semibold focus:outline-none ${tab === 'classmates' ? 'border-b-2 border-brown text-brown' : 'text-gray-500'}`}
+          onClick={() => setTab('classmates')}
+        >
+          Pjesëmarrësit
+        </button>
+        <button
+          className={`px-4 py-2 font-semibold focus:outline-none ${tab === 'assignments' ? 'border-b-2 border-brown text-brown' : 'text-gray-500'}`}
+          onClick={() => setTab('assignments')}
+        >
+          Detyrat
+        </button>
+      </div>
+      {tab === 'classmates' && <ClassmatesList courseId={courseData.id} />}
+      {tab === 'assignments' && <AssignmentsSection courseId={courseData.id} />}
+    </div>
+  </div>
                   ) : courseData.isPaid ? (
                     <div className="p-6 border rounded-lg bg-gray-50">
                       <h3 className="text-lg font-semibold mb-3">Regjistrohu në Kurs (€{courseData.price})</h3>
