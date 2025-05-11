@@ -1,94 +1,337 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { Course, Announcement } from "../../types";
+import { Course } from "../../types";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw, Plus, BookOpen, GraduationCap, Users } from "lucide-react";
 import { AnnouncementModal } from "./AnnouncementModal";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
 import type { Database } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 
-export const DashboardOverview = () => {
+interface DashboardOverviewProps {
+  onCreateCourseClick?: () => void;
+}
+
+export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [timeoutError, setTimeoutError] = useState(false);
   
-  // Type alias for Question Row needed here
-  type QuestionRow = Database['public']['Tables']['questions']['Row'];
-  // Define type for the joined data needed for questions
-  type QuestionWithCourseTitle = QuestionRow & {
-    courses: { title: string } | null; 
-  };
-
   // Set role flags
   const isInstructor = user?.role === 'instructor';
   const isAdmin = user?.role === 'admin';
 
+  // Fetch courses for the dashboard
   const { 
     data: courses = [], 
     isLoading: isLoadingCourses, 
     isError: isCoursesError, 
-    error: coursesError 
+    error: coursesError,
+    refetch: refetchCourses
   } = useQuery<Course[], Error>({
     queryKey: ['dashboardCourses', user?.id, user?.role],
     queryFn: async () => {
       if (!user?.id) return [];
-      let query = supabase.from('courses').select('*');
-      if (isInstructor) {
-        query = query.eq('instructor_id', user.id);
-      } else if (isAdmin) {
-        query = query.eq('status', 'active'); // Admins see all active courses
+      
+      console.log('Fetching courses for user:', user.id, 'with role:', user.role);
+      
+      try {
+        // Build the query based on user role
+        let query = supabase.from('courses').select('*');
+        
+        if (isInstructor) {
+          query = query.eq('instructor_id', user.id);
+        } else if (isAdmin) {
+          // Admins see all active courses
+          query = query.eq('status', 'active');
+        }
+        
+        const { data, error } = await query.order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error("Error fetching courses:", error);
+          throw new Error(`Failed to fetch courses: ${error.message}`);
+        }
+        
+        if (!data || data.length === 0) {
+          console.log('No courses found for this user');
+          return [];
+        }
+        
+        // Map the database records to our Course type
+        return data.map(course => ({
+          id: course.id,
+          title: course.title || '',
+          description: course.description || '',
+          image: course.image || '',
+          category: (course.category || 'other') as 'programim' | 'dizajn' | 'marketing' | 'other',
+          instructor: course.instructor || '',
+          instructorId: course.instructor_id || '',
+          students: course.students || 0,
+          status: (course.status || 'draft') as 'active' | 'draft',
+          price: course.price || 0,
+          isPaid: Boolean(course.isPaid),
+          accessCode: course.accessCode || '',
+          created_at: course.created_at,
+          updated_at: course.updated_at,
+          allow_admin_applications: Boolean(course.allow_admin_applications)
+        }));
+      } catch (err) {
+        console.error('Unexpected error fetching courses:', err);
+        throw err;
       }
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) {
-        console.error("Error fetching courses for overview:", error);
-        throw error;
-      }
-      return data?.map(course => ({
-        id: course.id,
-        title: course.title,
-        description: course.description,
-        image: course.image,
-        category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
-        instructor: course.instructor,
-        instructorId: course.instructor_id,
-        students: course.students || 0,
-        status: course.status as 'active' | 'draft',
-        price: course.price || 0,
-        isPaid: !!course.isPaid,
-        accessCode: course.accessCode,
-        created_at: course.created_at,
-        updated_at: course.updated_at
-      })) || [];
     },
     enabled: !!user?.id,
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: 2,
   });
-  // Add a timeout to prevent infinite loading
-  const [timeoutError, setTimeoutError] = useState(false);
+
+  // Fetch announcements for the instructor
+  const { 
+    data: announcements = [], 
+    isLoading: isLoadingAnnouncements, 
+    error: announcementsError 
+  } = useQuery({
+    queryKey: ['instructorAnnouncements', user?.id],
+    queryFn: async () => {
+      if (!user?.id || !isInstructor) return [];
+      
+      try {
+        const { data, error } = await supabase
+          .from('announcements')
+          .select('*')
+          .eq('instructor_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+          
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.error('Error fetching announcements:', err);
+        return [];
+      }
+    },
+    enabled: !!user?.id && isInstructor,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
   
-  // Add useEffect after all query declarations to avoid using variables before declaration
+  // Fetch pending questions for the instructor
+  const { data: pendingQuestions = [] } = useQuery({
+    queryKey: ['pendingInstructorQuestions', user?.id],
+    queryFn: async () => {
+      if (!user?.id || !isInstructor) return [];
+      
+      try {
+        const { data, error } = await supabase
+          .from('questions')
+          .select('*, courses(title)')
+          .eq('instructor_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+          
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.error('Error fetching pending questions:', err);
+        return [];
+      }
+    },
+    enabled: !!user?.id && isInstructor,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+  
+  // Add a timeout to prevent infinite loading
   useEffect(() => {
-    // If loading takes more than 10 seconds, show timeout error
+    // If loading takes more than 8 seconds, show timeout error
     let timeoutId: NodeJS.Timeout | null = null;
     
     if (isLoadingCourses) {
+      setTimeoutError(false); // Reset timeout error when loading starts
       timeoutId = setTimeout(() => {
+        console.log('Dashboard loading timeout reached');
         setTimeoutError(true);
-      }, 10000); // 10 seconds timeout
+      }, 8000); // 8 seconds timeout
     }
     
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isLoadingCourses]);
-
-  const { data: announcements = [], isLoading: isLoadingAnnouncements, error: announcementsError } = useQuery({
+  }, [isLoadingCourses, setTimeoutError]);
+  
+  // Function to handle manual refresh when timeout occurs
+  const handleManualRefresh = () => {
+    setTimeoutError(false);
+    refetchCourses();
+    // Force window reload if needed
+    if (isCoursesError) {
+      window.location.reload();
+    }
+  };
+  
+  // Handle loading state and errors
+  if (isLoadingCourses && !timeoutError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <Loader2 className="h-12 w-12 animate-spin text-brown mb-4" />
+        <p className="text-lg font-medium">Duke ngarkuar panelin...</p>
+      </div>
+    );
+  }
+  
+  if (timeoutError) {
+    return (
+      <div className="text-center py-10 bg-white rounded-lg shadow-sm p-6 border border-amber-200">
+        <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+        <h3 className="text-xl font-bold mb-2">Ngarkimi po merr më shumë kohë se zakonisht</h3>
+        <p className="text-gray-600 mb-4">Ju lutemi prisni ose provoni të rifreskoni faqen.</p>
+        <button 
+          className="btn bg-brown text-white hover:bg-brown/90 flex items-center gap-2 mx-auto"
+          onClick={handleManualRefresh}
+        >
+          <RefreshCw className="h-4 w-4" />
+          Rifresko Tani
+        </button>
+      </div>
+    );
+  }
+  
+  if (isCoursesError) {
+    return (
+      <div className="text-center py-10 bg-white rounded-lg shadow-sm p-6 border border-red-200">
+        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+        <h3 className="text-xl font-bold mb-2">Gabim gjatë ngarkimit</h3>
+        <p className="text-gray-600 mb-4">{coursesError?.message || 'Ndodhi një problem gjatë ngarkimit të të dhënave.'}</p>
+        <button 
+          className="btn bg-brown text-white hover:bg-brown/90 flex items-center gap-2 mx-auto"
+          onClick={handleManualRefresh}
+        >
+          <RefreshCw className="h-4 w-4" />
+          Provo Përsëri
+        </button>
+      </div>
+    );
+  }
+  
+  // Main dashboard content
+  return (
+    <div>
+      <h3 className="text-2xl font-playfair mb-6 pb-3 border-b border-lightGray">
+        Paneli Kryesor (Përmbledhje)
+      </h3>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg border border-lightGray shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-bold">Kurset e Mia</h4>
+            <span className="bg-brown/10 text-brown px-2 py-1 rounded-full text-sm font-medium">
+              {courses.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <BookOpen className="h-5 w-5" />
+            <span>{courses.filter(c => c.status === 'active').length} aktive</span>
+          </div>
+          {onCreateCourseClick && (
+            <button 
+              onClick={onCreateCourseClick}
+              className="mt-4 w-full btn btn-secondary flex items-center justify-center gap-2"
+            >
+              <Plus className="h-4 w-4" /> Krijo Kurs të Ri
+            </button>
+          )}
+        </div>
+        
+        <div className="bg-white p-6 rounded-lg border border-lightGray shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-bold">Studentët</h4>
+            <span className="bg-brown/10 text-brown px-2 py-1 rounded-full text-sm font-medium">
+              {courses.reduce((total, course) => total + course.students, 0)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <Users className="h-5 w-5" />
+            <span>Në të gjitha kurset</span>
+          </div>
+        </div>
+        
+        <div className="bg-white p-6 rounded-lg border border-lightGray shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-bold">Pyetje në Pritje</h4>
+            <span className="bg-brown/10 text-brown px-2 py-1 rounded-full text-sm font-medium">
+              {pendingQuestions.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-gray-600">
+            <GraduationCap className="h-5 w-5" />
+            <span>Kërkojnë përgjigje</span>
+          </div>
+          {pendingQuestions.length > 0 && (
+            <button 
+              onClick={() => navigate('/dashboard/questions')}
+              className="mt-4 w-full btn btn-secondary flex items-center justify-center gap-2"
+            >
+              Shiko Pyetjet
+            </button>
+          )}
+        </div>
+      </div>
+      
+      <div className="bg-white p-6 rounded-lg border border-lightGray shadow-sm mb-6">
+        <h4 className="text-xl font-playfair font-bold mb-4 flex justify-between items-center">
+          <span>Kurset Aktive</span>
+          {onCreateCourseClick && (
+            <button 
+              onClick={onCreateCourseClick}
+              className="btn btn-sm btn-secondary flex items-center gap-1"
+            >
+              <Plus className="h-3 w-3" /> Kurs i Ri
+            </button>
+          )}
+        </h4>
+        {courses.length > 0 ? (
+          <ul className="space-y-2">
+            {courses.map(course => (
+              <li key={course.id} className="py-2 border-b border-lightGray last:border-0 flex justify-between items-center">
+                <span className="font-medium hover:text-brown cursor-pointer" onClick={() => navigate(`/dashboard/courses/${course.id}`)}>
+                  {course.title} 
+                  <span className="text-sm text-gray-500 ml-2">({course.students} studentë)</span>
+                </span>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${course.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                  {course.status === 'active' ? 'Aktiv' : 'Draft'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            <p>Nuk keni kurse aktive.</p>
+            {onCreateCourseClick && (
+              <button 
+                onClick={onCreateCourseClick}
+                className="mt-4 btn btn-primary"
+              >
+                Krijo Kursin e Parë
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* Announcements Modal */}
+      <AnnouncementModal 
+        isOpen={isAnnouncementModalOpen} 
+        onClose={() => setIsAnnouncementModalOpen(false)} 
+        courseId={courses[0]?.id} // Use the first course ID as default
+      />
+    </div>
+  );
+}
     queryKey: ['instructorAnnouncements', user?.id],
     queryFn: async () => {
       try {

@@ -41,20 +41,6 @@ interface ExtendedTables {
 // Extended Supabase client type that includes our custom tables
 type ExtendedSupabaseClient = SupabaseClient<{
   Tables: ExtendedTables;
-  Functions: {
-    'get-course-comments': {
-      Args: { courseId: string };
-      Returns: CourseComment[];
-    };
-    'get-student-grades': {
-      Args: { userId: string; courseIds: string[] };
-      Returns: StudentGrade[];
-    };
-    'insert-course-comment': {
-      Args: Omit<CourseComment, 'id'>;
-      Returns: { id: string };
-    };
-  };
 }>
 
 // Helper function to insert a course comment

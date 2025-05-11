@@ -26,32 +26,79 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
     const fetchClassmates = async () => {
       setLoading(true);
       setError(null);
-      const { data, error } = await supabase
-        .from('enrollments')
-        .select('user_id, profiles (id, name, role)')
-        .eq('course_id', courseId);
-      if (error) {
-        setError('Gabim gjatë ngarkimit të studentëve.');
-        setLoading(false);
-        return;
-      }
-      setClassmates(
-        (data || []).map((row: { profiles?: { id: string; name: string; role: string; email?: string } }) => {
-          if (!row.profiles) return null;
+      
+      try {
+        // First get all enrollments for this course
+        const { data: enrollments, error: enrollmentsError } = await supabase
+          .from('enrollments')
+          .select('user_id')
+          .eq('course_id', courseId);
+        
+        if (enrollmentsError) {
+          throw enrollmentsError;
+        }
+        
+        if (!enrollments || !enrollments.length) {
+          setClassmates([]);
+          setLoading(false);
+          return;
+        }
+        
+        // Update the course with the correct student count if needed
+        try {
+          const { data: courseData } = await supabase
+            .from('courses')
+            .select('students')
+            .eq('id', courseId)
+            .single();
+            
+          if (courseData && courseData.students !== enrollments.length) {
+            // Update the student count to match the actual number of enrollments
+            await supabase
+              .from('courses')
+              .update({ students: enrollments.length })
+              .eq('id', courseId);
+          }
+        } catch (countError) {
+          console.error('Error updating student count:', countError);
+          // Continue anyway - this is not critical
+        }
+        
+        // Get user profiles separately to avoid join issues
+        const userIds = enrollments.map(e => e.user_id);
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, name, role')
+          .in('id', userIds);
+        
+        if (profilesError) {
+          throw profilesError;
+        }
+        
+        // Map profiles to user objects
+        const validClassmates = profiles.map(profile => {
           // Only accept valid roles
-          const role = ['student', 'instructor', 'admin'].includes(row.profiles.role)
-            ? (row.profiles.role as 'student' | 'instructor' | 'admin')
+          const role = ['student', 'instructor', 'admin'].includes(profile.role)
+            ? (profile.role as 'student' | 'instructor' | 'admin')
             : 'student';
+          
           return {
-            id: row.profiles.id,
-            name: row.profiles.name,
+            id: profile.id,
+            name: profile.name || 'Student',
             role,
-            email: row.profiles.email ?? ''
+            email: ''
           };
-        }).filter(Boolean) as User[]
-      );
-      setLoading(false);
+        }) as User[];
+        
+        setClassmates(validClassmates);
+      } catch (error) {
+        console.error('Error fetching classmates:', error);
+        setError('Gabim gjatë ngarkimit të studentëve.');
+      } finally {
+        setLoading(false);
+      }
     };
+    
     fetchClassmates();
   }, [courseId]);
 

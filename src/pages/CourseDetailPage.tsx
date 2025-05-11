@@ -35,8 +35,25 @@ const CourseDetailPage = () => {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
 
+  // Add a timeout to prevent infinite loading
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    if (courseId && queryLoading) {
+      timeoutId = setTimeout(() => {
+        // If still loading after 10 seconds, force reload the page
+        console.log('Loading timeout reached, reloading page...');
+        window.location.reload();
+      }, 10000);
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [courseId, queryLoading]);
+  
   // Fetch course details
-  const { data: courseData, isLoading: queryLoading } = useQuery({
+  const { data: course, isLoading: queryLoading, error: queryError } = useQuery({
     queryKey: ['course', courseId],
     queryFn: async () => {
       if (!courseId) return null;
@@ -78,21 +95,29 @@ const CourseDetailPage = () => {
   useEffect(() => {
     if (error) return; // Don't run if there's a 404
     const checkEnrollment = async () => {
-      if (!user || !courseData) return;
-      const { data, error } = await supabase
-        .from('enrollments')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('course_id', courseData.id)
-        .maybeSingle();
-      if (error) {
-        console.error('Error checking enrollment:', error);
-        return;
+      if (!user || !courseId || !course) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('enrollments')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('course_id', courseId)
+          .maybeSingle();
+        
+        if (error) {
+          console.error('Error checking enrollment:', error);
+          return;
+        }
+        
+        setIsEnrolled(!!data);
+      } catch (err) {
+        console.error('Unexpected error checking enrollment:', err);
       }
-      setIsEnrolled(!!data);
     };
+    
     checkEnrollment();
-  }, [user, courseData, error]);
+  }, [user, courseId, course, error]);
 
   // Enroll handler must be a function, not floating code
   const handleEnroll = async () => {
@@ -101,18 +126,18 @@ const CourseDetailPage = () => {
       navigate('/login');
       return;
     }
-    if (!courseData) return;
+    if (!course) return;
     setIsSubmitting(true);
     try {
       // Validate access code
-      if (courseData.accessCode && accessCode.trim() !== courseData.accessCode) {
+      if (course.accessCode && accessCode.trim() !== course.accessCode) {
         toast({ title: "Invalid Code", description: "Access code is incorrect.", variant: "destructive" });
         return;
       }
       // Directly insert enrollment record
       const { error: enrollError } = await supabase
         .from('enrollments')
-        .insert({ user_id: user.id, course_id: courseData.id, progress: 0, completed: false });
+        .insert({ user_id: user.id, course_id: course.id, progress: 0, completed: false });
       if (enrollError) throw enrollError;
       toast({ title: "Success!", description: "You have been enrolled successfully." });
       setIsEnrolled(true);
@@ -125,9 +150,22 @@ const CourseDetailPage = () => {
       setIsSubmitting(false);
     }
   };
-  
+
+  const handleOpenAnnouncementModal = () => {
+    if (!user || !courseId) {
+      toast({
+        title: "Error",
+        description: "You need to be logged in to create an announcement.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsAnnouncementModalOpen(true);
+  };
+
   const handlePaymentSuccess = async (details: unknown, data: unknown) => {
-    if (!user || !courseData) {
+    if (!user || !course || !courseId) {
        console.error("Payment approved but user/course undefined");
        toast({ title: "Error", description: "User or Course data missing. Cannot enroll.", variant: "destructive" });
        return;
@@ -138,7 +176,7 @@ const CourseDetailPage = () => {
     try {
       const { error: enrollError } = await supabase
         .from('enrollments')
-        .insert({ user_id: user.id, course_id: courseData.id, progress: 0, completed: false });
+        .insert({ user_id: user.id, course_id: courseId, progress: 0, completed: false });
       if (enrollError) throw enrollError;
       toast({ title: "Success!", description: "Payment successful and enrolled!" });
       setIsEnrolled(true);
@@ -179,60 +217,46 @@ const CourseDetailPage = () => {
   });
 
   // Function to handle comment submission
-  const handleCommentSubmit = async () => {
-    if (!user || !courseId || !commentText.trim()) return;
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim() || !user || !courseId) return;
     
     setIsSubmittingComment(true);
     
     try {
-      // Create comment data object with all required fields
-      const commentData = {
+      // Use the helper function for type-safe insertion
+      const { error } = await insertCourseComment(supabase, {
         course_id: courseId,
         user_id: user.id,
-        content: commentText.trim(),
+        content: commentText,
         is_public: isPublicComment,
-        created_at: new Date().toISOString(),
-        user_name: user.name || 'Student',
-        status: 'active'
-      };
-      
-      // Use our helper function to insert the comment
-      const { error } = await insertCourseComment(supabase, commentData);
+      });
       
       if (error) {
         console.error('Error submitting comment:', error);
-        
-        // Store in localStorage as a backup if database insert fails
-        const localStorageKey = `course_comments_${courseId}`;
-        const localComments = JSON.parse(localStorage.getItem(localStorageKey) || '[]');
-        const newComment = {
-          ...commentData,
-          id: `local-${Date.now()}`
-        };
-        localStorage.setItem(localStorageKey, JSON.stringify([newComment, ...localComments]));
-        
         toast({
-          title: 'Komenti u ruajt lokalisht',
-          description: 'Komenti juaj u ruajt lokalisht dhe do të sinkronizohet me serverin më vonë.',
+          title: 'Error',
+          description: 'Failed to submit your comment. Please try again.',
+          variant: 'destructive',
         });
       } else {
+        // Clear form and refetch comments
+        setCommentText('');
+        setIsPublicComment(false);
+        
         toast({
-          title: 'Sukses!',
-          description: 'Komenti juaj u dërgua me sukses.',
+          title: 'Success!',
+          description: 'Your comment was submitted successfully.',
         });
         
         // Refresh comments list
         refetchComments();
       }
-      
-      // Reset form in either case
-      setCommentText('');
-      setIsPublicComment(false);
-    } catch (error) {
-      console.error('Failed to submit comment:', error);
+    } catch (err) {
+      console.error('Unexpected error submitting comment:', err);
       toast({
-        title: 'Gabim!',
-        description: 'Ndodhi një problem gjatë dërgimit të komentit. Ju lutemi provoni përsëri.',
+        title: 'Error',
+        description: 'An unexpected error occurred. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -254,49 +278,56 @@ const CourseDetailPage = () => {
   };
 
   // Extract course code from title (temporary solution until we have a proper accessCode field)
-  const codeMatch = courseData?.title?.match(/\[(.*?)\]/);
+  const codeMatch = course?.title?.match(/\[(.*?)\]/);
   const courseCode = codeMatch ? codeMatch[1] : null;
-  const cleanTitle = courseData?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
+  const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
-  const isInstructor = user?.id === courseData?.instructorId;
+  const isInstructor = user?.id === course?.instructorId || user?.role === 'admin';
 
-  // Fetch course admin status for current user
-  const { data: adminStatus, isLoading: isLoadingAdminStatus } = useQuery({
-    queryKey: ['courseAdminStatus', courseId, user?.id],
-    queryFn: async () => {
-      if (!user?.id || !courseId) return false;
-      // Ensure correct import at the top:
-      // import type { Database } from '@/types/supabase';
-      // import { PostgrestError } from '@supabase/supabase-js';
+  // Use state for admin status instead of a query to avoid type issues
+  const [isClassAdmin, setIsClassAdmin] = useState(false);
+  const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
+  
+  // Simplified admin status check
+  useEffect(() => {
+    // Skip if no user or course ID
+    if (!user?.id || !courseId) {
+      setIsClassAdmin(false);
+      return;
+    }
+    
+    setIsCheckingAdminStatus(true);
+    
+    // Simple function to check admin status
+    const checkAdminStatus = async () => {
       try {
-        // Query for admin status with simpler typing
+        // Direct database query to check admin status
         const { data, error } = await supabase
           .from('course_admins')
-          .select('id, status')
+          .select('id')
           .eq('course_id', courseId)
           .eq('user_id', user.id)
           .eq('status', 'approved')
-          .maybeSingle();
-          
+          .limit(1);
+        
         if (error) {
           console.error('Error checking admin status:', error.message);
-          return false;
+          setIsClassAdmin(false);
+        } else {
+          // User is an admin if we found any matching rows
+          setIsClassAdmin(Array.isArray(data) && data.length > 0);
         }
-        
-        // Defensive: only consider as admin if row exists and has approved status
-        // Use a simpler type check to avoid deep type instantiation
-        if (!data) return false;
-        const adminData = data as { status?: string };
-        return adminData.status === 'approved';
       } catch (err) {
-        console.error('Unexpected error checking admin status:', err);
-        return false;
+        console.error('Error checking admin status:', err);
+        setIsClassAdmin(false);
+      } finally {
+        setIsCheckingAdminStatus(false);
       }
-    },
-    enabled: !!user?.id && !!courseId,
-    staleTime: 5 * 60 * 1000,
-  });
-  const isClassAdmin = !!adminStatus;
+    };
+    
+    checkAdminStatus();
+  }, [user?.id, courseId]);
+  // Define isStudent based on user role and admin status
   const isStudent = !!user && !isInstructor && user.role !== 'admin' && !isClassAdmin;
 
   if (queryLoading) {
@@ -382,19 +413,20 @@ const CourseDetailPage = () => {
               onClose={() => setIsAnnouncementModalOpen(false)} 
               courseId={courseId}
             />
-            {/* Announcements list placeholder */}
+            {/* Announcements list */}
             <div className="space-y-4 mb-8">
-              <div className="bg-white rounded shadow px-4 py-3">
-                <div className="font-bold text-lg">me nerva</div>
-                <div className="text-gray-700">ajo me nerva +20</div>
-                <div className="text-xs text-gray-400 mt-1">Publikuar 13 ditë më parë</div>
+              {/* We'll fetch announcements from the database in the future */}
+              <div className="bg-white rounded shadow px-4 py-3 text-center text-gray-500">
+                <p>Nuk ka njoftime për këtë kurs aktualisht.</p>
+                {(isInstructor || isClassAdmin) && (
+                  <button 
+                    onClick={handleOpenAnnouncementModal}
+                    className="text-brown hover:text-gold text-sm mt-2"
+                  >
+                    + Shto një njoftim të ri
+                  </button>
+                )}
               </div>
-              <div className="bg-white rounded shadow px-4 py-3">
-                <div className="font-bold text-lg">prshnd</div>
-                <div className="text-gray-700">ckemiiiiiiii</div>
-                <div className="text-xs text-gray-400 mt-1">Publikuar 24 ditë më parë</div>
-              </div>
-              {/* ... more announcements ... */}
             </div>
             {/* Comments section */}
             <div className="mb-6">
@@ -439,17 +471,20 @@ const CourseDetailPage = () => {
                 </div>
               )}
               
-              {/* Student comment box */}
-              {isStudent && (
-                <div className="bg-white rounded shadow px-4 py-4">
-                  <h4 className="font-semibold mb-2">Komento në këtë klasë</h4>
+              {/* Comment form */}
+              {user && (
+                <form 
+                  className="bg-white rounded-lg shadow-sm p-4 border border-gray-100 space-y-3"
+                  onSubmit={handleSubmitComment}
+                >
                   <textarea
-                    className="w-full border border-lightGray rounded-md px-3 py-2 mb-2 focus:outline-none focus:ring-1 focus:ring-brown"
+                    className="w-full p-3 border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-gold"
+                    placeholder="Shkruaj një koment..."
                     rows={3}
-                    placeholder="Shkruani një koment... (vetëm instruktori/administratori mund ta shohë nëse e lini privat)"
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     disabled={isSubmittingComment}
+                    required
                   />
                   <div className="flex items-center gap-2 mb-2">
                     <input 
@@ -463,8 +498,8 @@ const CourseDetailPage = () => {
                     <label htmlFor="publicComment" className="text-sm">Bëje publike për të gjithë klasën</label>
                   </div>
                   <button 
+                    type="submit"
                     className="btn btn-primary flex items-center justify-center gap-2"
-                    onClick={handleCommentSubmit}
                     disabled={isSubmittingComment || !commentText.trim()}
                   >
                     {isSubmittingComment && (
@@ -472,7 +507,7 @@ const CourseDetailPage = () => {
                     )}
                     Dërgo Koment
                   </button>
-                </div>
+                </form>
               )}
             </div>
           </section>
@@ -489,14 +524,14 @@ const CourseDetailPage = () => {
         {tab === 'students' && (
           <section>
             <h3 className="text-2xl font-bold font-playfair mb-6">Studentët</h3>
-            <ClassmatesList courseId={courseData.id} />
+            <ClassmatesList courseId={courseId as string} />
           </section>
         )}
         {/* Grades Tab */}
         {tab === 'grades' && (
           <section>
             <h3 className="text-2xl font-bold font-playfair mb-6">Notat</h3>
-            <StudentGradesList courseId={courseData.id} />
+            <StudentGradesList courseId={courseId as string} />
           </section>
         )}
         {/* Settings Tab */}

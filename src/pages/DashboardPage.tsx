@@ -13,13 +13,15 @@ import { DashboardContentModeration } from "../components/dashboard/DashboardCon
 import { DashboardQuestions } from "../components/dashboard/DashboardQuestions";
 import { CreateCourseModal } from "../components/modals/CreateCourseModal";
 import { useAuth } from "../context/AuthContext";
-import { Navigate, Routes, Route, Outlet } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import CourseManagementPage from "./CourseManagementPage";
 import AdminApplyCoursesPage from "./AdminApplyCoursesPage";
 
 const DashboardPage = () => {
   const { user, isLoading } = useAuth();
   const [createCourseModalOpen, setCreateCourseModalOpen] = useState(false);
+  const [timeoutError, setTimeoutError] = useState(false);
 
   if (!isLoading && (!user || (user.role !== 'instructor' && user.role !== 'admin'))) {
     return <Navigate to="/" />;
@@ -28,7 +30,8 @@ const DashboardPage = () => {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        Loading... 
+        <Loader2 className="h-12 w-12 animate-spin text-brown mb-4" />
+        <p className="text-lg font-medium ml-2">Duke ngarkuar...</p>
       </div>
     );
   }
