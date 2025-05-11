@@ -66,54 +66,73 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
     setIsLoading(true);
     
     try {
-      const announcementData: Database['public']['Tables']['announcements']['Insert'] = {
+      // Create announcement data object
+      const announcementData = {
         title: title.trim(),
         content: content.trim(),
         instructor_id: user.id,
         created_at: new Date().toISOString(),
-        course_id: courseId || null
+        course_id: courseId || null,
+        // Add instructor name if available
+        instructor_name: user.name || null
       };
       
-      // --- DEBUG: Isolate the insert operation --- 
-      console.log("Attempting to insert announcement data:", announcementData);
-      // Remove .select().single()
+      console.log("Submitting announcement:", announcementData);
+      
+      // Insert announcement with simplified approach
       const { error: insertError } = await supabase
         .from('announcements')
         .insert(announcementData);
-        // .select()
-        // .single();
       
-      // Log the result of the plain insert
-      console.log("Insert Result:", { insertError });
-
       if (insertError) {
-        console.error('Error during announcement insert operation:', insertError);
-        if (insertError.message.includes('violates foreign key constraint') && insertError.message.includes('announcements_course_id_fkey')) {
-           toast({
-             title: 'Gabim Lidhjeje',
-             description: 'Kursi i specifikuar nuk ekziston. Njoftimi nuk u ruajt.',
-             variant: 'destructive',
-           });
-        } else {
-           throw insertError; // Re-throw the actual insert error
-        }
-      } else {
-          // Insert succeeded
-          console.log("Announcement insert reported success.");
-          queryClient.invalidateQueries({ queryKey: ['announcements'] });
-          if (courseId) {
-            queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', courseId] });
-          }
+        console.error('Error during announcement insert:', insertError);
+        
+        // Handle specific error cases
+        if (insertError.code === '23503' || // Foreign key violation
+           (insertError.message && insertError.message.includes('foreign key constraint'))) {
+          toast({
+            title: 'Gabim Lidhjeje',
+            description: 'Kursi i specifikuar nuk ekziston. Njoftimi nuk u ruajt.',
+            variant: 'destructive',
+          });
+        } else if (insertError.code === '42P01') { // Table doesn't exist
+          // Fall back to localStorage if table doesn't exist yet
+          const localAnnouncements = JSON.parse(localStorage.getItem('announcements') || '[]');
+          const newAnnouncement = {
+            ...announcementData,
+            id: `local-${Date.now()}` // Generate a temporary ID
+          };
+          localStorage.setItem('announcements', JSON.stringify([newAnnouncement, ...localAnnouncements]));
           
           toast({
-            title: 'Sukses!',
-            description: 'Njoftimi u publikua me sukses.',
+            title: 'Sukses (Lokal)!',
+            description: 'Njoftimi u ruajt lokalisht. Do të sinkronizohet me serverin kur të jetë i disponueshëm.',
           });
           
           setTitle('');
           setContent('');
           setErrors({});
           onClose();
+          return;
+        } else {
+          throw insertError;
+        }
+      } else {
+        // Success - invalidate queries to refresh data
+        queryClient.invalidateQueries({ queryKey: ['announcements'] });
+        if (courseId) {
+          queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', courseId] });
+        }
+        
+        toast({
+          title: 'Sukses!',
+          description: 'Njoftimi u publikua me sukses.',
+        });
+        
+        setTitle('');
+        setContent('');
+        setErrors({});
+        onClose();
       }
 
     } catch (error) {

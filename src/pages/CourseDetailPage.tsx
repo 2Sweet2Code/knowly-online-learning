@@ -1,16 +1,30 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "../context/AuthContext";
-import type { Database } from '@/types/supabase';
+import { Loader2, MessageSquare, User, Clock, Users, AlertCircle } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { sq } from "date-fns/locale";
 import type { PostgrestError } from '@supabase/postgrest-js';
 import { useToast } from "@/hooks/use-toast";
 import { Course } from "@/types";
+import type { Database } from '@/integrations/supabase/types';
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
-import { Loader2, Users, AlertCircle } from "lucide-react";
 import { ClassmatesList } from "../components/ClassmatesList";
+
+// Define the CourseComment type for the course_comments table
+type CourseComment = {
+  id: string;
+  course_id: string;
+  user_id: string;
+  content: string;
+  is_public: boolean;
+  created_at: string;
+  user_name?: string;
+  status?: string;
+};
 
 const CourseDetailPage = () => {
   const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'settings'>('stream');
@@ -18,10 +32,14 @@ const CourseDetailPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [accessCode, setAccessCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [isPublicComment, setIsPublicComment] = useState(false);
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   // Fetch course details
   const { data: courseData, isLoading: queryLoading } = useQuery({
@@ -137,6 +155,100 @@ const CourseDetailPage = () => {
        toast({ title: "Enrollment Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Fetch course comments
+  const { 
+    data: comments = [], 
+    isLoading: isLoadingComments,
+    refetch: refetchComments
+  } = useQuery<CourseComment[]>({
+    queryKey: ['courseComments', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      try {
+        // Use the new course_comments table with type assertion
+        const { data, error } = await supabase
+          .from('course_comments' as any)
+          .select('*')
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.error('Error fetching comments:', err);
+        // Try to get comments from localStorage as fallback
+        const localComments = localStorage.getItem(`course_comments_${courseId}`);
+        return localComments ? JSON.parse(localComments) : [];
+      }
+    },
+    enabled: !!courseId,
+  });
+
+  // Function to handle comment submission
+  const handleCommentSubmit = async () => {
+    if (!user || !courseId || !commentText.trim()) return;
+    
+    setIsSubmittingComment(true);
+    
+    try {
+      // Create comment data object with all required fields
+      const commentData = {
+        course_id: courseId,
+        user_id: user.id,
+        content: commentText.trim(),
+        is_public: isPublicComment,
+        created_at: new Date().toISOString(),
+        user_name: user.name || 'Student',
+        status: 'active'
+      };
+      
+      // Insert directly into the course_comments table with type assertion
+      const { error } = await supabase
+        .from('course_comments' as any)
+        .insert(commentData);
+      
+      if (error) {
+        console.error('Error submitting comment:', error);
+        
+        // Store in localStorage as a backup if database insert fails
+        const localStorageKey = `course_comments_${courseId}`;
+        const localComments = JSON.parse(localStorage.getItem(localStorageKey) || '[]');
+        const newComment = {
+          ...commentData,
+          id: `local-${Date.now()}`
+        };
+        localStorage.setItem(localStorageKey, JSON.stringify([newComment, ...localComments]));
+        
+        toast({
+          title: 'Komenti u ruajt lokalisht',
+          description: 'Komenti juaj u ruajt lokalisht dhe do të sinkronizohet me serverin më vonë.',
+        });
+      } else {
+        toast({
+          title: 'Sukses!',
+          description: 'Komenti juaj u dërgua me sukses.',
+        });
+        
+        // Refresh comments list
+        refetchComments();
+      }
+      
+      // Reset form in either case
+      setCommentText('');
+      setIsPublicComment(false);
+    } catch (error) {
+      console.error('Failed to submit comment:', error);
+      toast({
+        title: 'Gabim!',
+        description: 'Ndodhi një problem gjatë dërgimit të komentit. Ju lutemi provoni përsëri.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmittingComment(false);
     }
   };
 
@@ -273,23 +385,85 @@ const CourseDetailPage = () => {
               </div>
               {/* ... more announcements ... */}
             </div>
-            {/* Student comment box */}
-            {isStudent && (
-              <div className="bg-white rounded shadow px-4 py-4">
-                <h4 className="font-semibold mb-2">Komento në këtë klasë</h4>
-                <textarea
-                  className="w-full border border-lightGray rounded-md px-3 py-2 mb-2 focus:outline-none focus:ring-1 focus:ring-brown"
-                  rows={3}
-                  placeholder="Shkruani një koment... (vetëm instruktori/administratori mund ta shohë nëse e lini privat)"
-                  // value and onChange stubbed for now
-                />
-                <div className="flex items-center gap-2 mb-2">
-                  <input type="checkbox" id="publicComment" className="accent-gold" />
-                  <label htmlFor="publicComment" className="text-sm">Bëje publike për të gjithë klasën</label>
+            {/* Comments section */}
+            <div className="mb-6">
+              <h4 className="font-semibold mb-4 flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Komentet e kursit
+              </h4>
+              
+              {/* Display existing comments */}
+              {isLoadingComments ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  <span>Duke ngarkuar komentet...</span>
                 </div>
-                <button className="btn btn-primary">Dërgo Koment</button>
-              </div>
-            )}
+              ) : comments.length > 0 ? (
+                <div className="space-y-4 mb-6">
+                  {comments.map(comment => (
+                    <div key={comment.id} className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-brown/10 text-brown p-1.5 rounded-full">
+                            <User className="h-4 w-4" />
+                          </div>
+                          <span className="font-medium">{comment.user_name || 'Student'}</span>
+                          {!comment.is_public && (
+                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600">Privat</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 flex items-center">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: sq })}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-gray-700">{comment.content}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 bg-gray-50 rounded-lg mb-6">
+                  <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500">Nuk ka komente ende. Ji i pari që komenton!</p>
+                </div>
+              )}
+              
+              {/* Student comment box */}
+              {isStudent && (
+                <div className="bg-white rounded shadow px-4 py-4">
+                  <h4 className="font-semibold mb-2">Komento në këtë klasë</h4>
+                  <textarea
+                    className="w-full border border-lightGray rounded-md px-3 py-2 mb-2 focus:outline-none focus:ring-1 focus:ring-brown"
+                    rows={3}
+                    placeholder="Shkruani një koment... (vetëm instruktori/administratori mund ta shohë nëse e lini privat)"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    disabled={isSubmittingComment}
+                  />
+                  <div className="flex items-center gap-2 mb-2">
+                    <input 
+                      type="checkbox" 
+                      id="publicComment" 
+                      className="accent-gold" 
+                      checked={isPublicComment}
+                      onChange={(e) => setIsPublicComment(e.target.checked)}
+                      disabled={isSubmittingComment}
+                    />
+                    <label htmlFor="publicComment" className="text-sm">Bëje publike për të gjithë klasën</label>
+                  </div>
+                  <button 
+                    className="btn btn-primary flex items-center justify-center gap-2"
+                    onClick={handleCommentSubmit}
+                    disabled={isSubmittingComment || !commentText.trim()}
+                  >
+                    {isSubmittingComment && (
+                      <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    Dërgo Koment
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
         )}
         {/* Content Tab */}

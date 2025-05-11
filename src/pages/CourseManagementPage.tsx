@@ -94,8 +94,105 @@ const CourseStream = () => {
   );
 };
 
-// Placeholder components for sections (create these next)
-const CourseStudents = () => <div>Students/Members Content</div>;
+import type { Database } from '@/types/supabase';
+
+const CourseStudents = () => {
+  const { courseId } = useParams<{ courseId: string }>();
+  const { user } = useAuth();
+
+  // Fetch course details to get instructor_id
+  const { data: course, isLoading: courseLoading } = useQuery<{ instructor_id: string } | null>({
+    queryKey: ['course', courseId],
+    queryFn: async () => {
+      if (!courseId) return null;
+      const { data, error } = await supabase
+        .from('courses')
+        .select('instructor_id')
+        .eq('id', courseId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!courseId,
+  });
+
+  // Fetch all enrolled students (excluding instructor)
+  type EnrollmentWithProfile = {
+    user_id: string;
+    profiles: Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'name' | 'role'> | null;
+  };
+  const {
+    data: students,
+    isLoading: studentsLoading,
+    error: studentsError,
+  } = useQuery<Array<{ id: string; name: string | null; role: string | null }>>({
+    queryKey: ['courseStudents', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      const { data, error } = await supabase
+        .from('enrollments')
+        .select('user_id, profiles (id, name, role)')
+        .eq('course_id', courseId);
+      if (error) throw error;
+      const instructorId = course?.instructor_id;
+      return ((data as EnrollmentWithProfile[] | null) || [])
+        .filter((enr) => enr.profiles && enr.user_id !== instructorId)
+        .map((enr) => ({
+          id: enr.profiles!.id,
+          name: enr.profiles!.name ?? null,
+          role: enr.profiles!.role ?? null,
+        }));
+    },
+    enabled: !!courseId && !!course,
+  });
+
+  if (courseLoading || studentsLoading) {
+    return (
+      <div className="flex justify-center items-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-brown" />
+        <span className="ml-2 text-gray-600">Loading students...</span>
+      </div>
+    );
+  }
+
+  if (studentsError) {
+    return (
+      <div className="text-center py-4 text-red-500">
+        <AlertCircle className="h-6 w-6 mx-auto mb-2" />
+        {(studentsError as Error).message}
+      </div>
+    );
+  }
+
+  const isInstructor = user?.id && course?.instructor_id && user.id === course.instructor_id;
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h2 className="text-xl font-semibold font-playfair mb-4 flex items-center">
+        <Users className="h-5 w-5 mr-2" />
+        Studentët e Kursit
+        {isInstructor && (
+          <span className="ml-3 text-base text-gray-500">({Array.isArray(students) ? students.length : 0})</span>
+        )}
+      </h2>
+      {(!Array.isArray(students) || students.length === 0) ? (
+        <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
+          <Users className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+          <p className="text-gray-600">Nuk ka studentë të regjistruar në këtë kurs ende.</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-gray-200 bg-white rounded-lg shadow-sm">
+          {(students ?? []).map((student) => (
+            <li key={student.id} className="py-3 px-4 flex items-center">
+              <span className="font-medium text-brown-dark">{student.name || 'Emër i panjohur'}</span>
+              <span className="ml-2 text-xs text-gray-500">({student.role})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 const CourseAssignments = () => <div>Assignments/Content Area</div>; // Example section
 const CourseSettings = () => <div>Course Settings Content</div>; 
 

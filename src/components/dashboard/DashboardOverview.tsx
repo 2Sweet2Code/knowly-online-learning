@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { Course, Announcement } from "../../types";
 import { useNavigate } from "react-router-dom";
@@ -25,9 +25,7 @@ export const DashboardOverview = () => {
     courses: { title: string } | null; 
   };
 
-  // Debug logging
-  console.log("user", user);
-  
+  // Set role flags
   const isInstructor = user?.role === 'instructor';
   const isAdmin = user?.role === 'admin';
 
@@ -71,8 +69,24 @@ export const DashboardOverview = () => {
     enabled: !!user?.id,
     staleTime: 1000 * 60 * 5,
   });
-  console.log("isLoadingCourses", isLoadingCourses);
-  console.log("courses", courses);
+  // Add a timeout to prevent infinite loading
+  const [timeoutError, setTimeoutError] = useState(false);
+  
+  // Add useEffect after all query declarations to avoid using variables before declaration
+  useEffect(() => {
+    // If loading takes more than 10 seconds, show timeout error
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    if (isLoadingCourses) {
+      timeoutId = setTimeout(() => {
+        setTimeoutError(true);
+      }, 10000); // 10 seconds timeout
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isLoadingCourses]);
 
   const { data: announcements = [], isLoading: isLoadingAnnouncements, error: announcementsError } = useQuery({
     queryKey: ['instructorAnnouncements', user?.id],
@@ -135,11 +149,32 @@ export const DashboardOverview = () => {
   // Combine loading states
   const isLoading = isLoadingCourses || isLoadingAnnouncements || isLoadingQuestions;
 
-  if (isLoading) {
+  if (isLoading && !timeoutError) {
     return (
       <div className="text-center py-10">
         <Loader2 className="h-8 w-8 animate-spin mx-auto text-brown mb-2" />
         <p className="mt-2 text-brown">Po ngarkohen të dhënat...</p>
+      </div>
+    );
+  }
+  
+  // Show timeout error if loading takes too long
+  if (timeoutError && isLoading) {
+    return (
+      <div className="text-center py-10">
+        <AlertCircle className="h-8 w-8 text-amber-500 mx-auto mb-4" />
+        <p className="text-amber-600 mb-2">Ngarkimi po merr më shumë kohë se zakonisht.</p>
+        <button 
+          className="mt-4 btn btn-secondary btn-sm"
+          onClick={() => {
+            setTimeoutError(false);
+            queryClient.refetchQueries({ queryKey: ['dashboardCourses', user?.id, user?.role] });
+            queryClient.refetchQueries({ queryKey: ['instructorAnnouncements', user?.id] });
+            queryClient.refetchQueries({ queryKey: ['pendingInstructorQuestions', user?.id] });
+          }}
+        >
+          Provo Përsëri
+        </button>
       </div>
     );
   }
