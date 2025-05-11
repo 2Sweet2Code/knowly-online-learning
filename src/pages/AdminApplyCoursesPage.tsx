@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { Database } from '@/types/supabase';
+import { PostgrestError } from '@supabase/supabase-js';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -53,11 +55,15 @@ const AdminApplyCoursesPage = () => {
         throw new Error("Unexpected response from Supabase: coursesData is not an array");
       }
 
-      const { data: existingApplications, error: appsError } = await supabase
+      // DEBUG: Select all columns to check Supabase schema visibility
+      const { data: existingApplications, error: appsError }: {
+        data: Database['public']['Tables']['course_admins']['Row'][] | null;
+        error: PostgrestError | null;
+      } = await supabase
         .from('course_admins')
-        .select('course_id, status') 
-        .eq('user_id', user.id);
-      console.log('existingApplications:', existingApplications);
+        .select('*')
+        .eq('user_id', user.id as Database['public']['Tables']['course_admins']['Row']['user_id']);
+      console.log('DEBUG existingApplications:', existingApplications);
 
       if (appsError) {
         console.error('Error fetching existing applications:', appsError);
