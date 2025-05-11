@@ -180,6 +180,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (error) {
         console.error("Error fetching initial session:", error);
         await fetchAndSetUser(undefined); 
+        setIsLoading(false); 
         return;
       }
       setSession(initialSession);
@@ -192,8 +193,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
           user_metadata: meta,
         });
+        await fetchAndSetUser(initialSession?.user?.id); 
+      } else {
+        setIsLoading(false);
       }
-      await fetchAndSetUser(initialSession?.user?.id); 
     };
     getInitialSession();
 
