@@ -157,7 +157,7 @@ const CourseDetailPage = () => {
     data: comments = [], 
     isLoading: isLoadingComments,
     refetch: refetchComments
-  } = useQuery<CourseComment[]>({
+  } = useQuery({
     queryKey: ['courseComments', courseId],
     queryFn: async () => {
       if (!courseId) return [];

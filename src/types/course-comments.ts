@@ -63,18 +63,8 @@ export const insertCourseComment = async (supabase: SupabaseClient, commentData:
     // Cast to ExtendedSupabaseClient to allow accessing our custom tables
     const extendedClient = supabase as unknown as ExtendedSupabaseClient;
     
-    // Try to use a function call first
-    try {
-      const functionResult = await extendedClient.functions.invoke('insert-course-comment', {
-        body: commentData
-      });
-      
-      if (!functionResult.error) {
-        return { data: functionResult.data, error: null };
-      }
-    } catch (funcErr) {
-      // Function doesn't exist, continue to fallback
-    }
+    // Skip Edge Function call due to CORS issues
+    // Just use direct database access
     
     // Fallback to direct insert
     return await extendedClient.from('course_comments').insert(commentData);
@@ -90,18 +80,8 @@ export const getCourseComments = async (supabase: SupabaseClient, courseId: stri
     // Cast to ExtendedSupabaseClient to allow accessing our custom tables
     const extendedClient = supabase as unknown as ExtendedSupabaseClient;
     
-    // Try to use a function call first (safer approach)
-    try {
-      const functionResult = await extendedClient.functions.invoke('get-course-comments', {
-        body: { courseId }
-      });
-      
-      if (functionResult.data && !functionResult.error) {
-        return { data: functionResult.data, error: null };
-      }
-    } catch (funcErr) {
-      // Function doesn't exist, continue to fallback
-    }
+    // Skip Edge Function call due to CORS issues
+    // Just use direct database access
     
     // Fallback to direct query with our extended type
     return await extendedClient.from('course_comments')
@@ -120,18 +100,8 @@ export const getStudentGrades = async (supabase: SupabaseClient, userId: string,
     // Cast to ExtendedSupabaseClient to allow accessing our custom tables
     const extendedClient = supabase as unknown as ExtendedSupabaseClient;
     
-    // Try to use a function call first (safer approach)
-    try {
-      const functionResult = await extendedClient.functions.invoke('get-student-grades', {
-        body: { userId, courseIds }
-      });
-      
-      if (functionResult.data && !functionResult.error) {
-        return { data: functionResult.data, error: null };
-      }
-    } catch (funcErr) {
-      // Function doesn't exist, continue to fallback
-    }
+    // Skip Edge Function call due to CORS issues
+    // Just use direct database access
     
     // Fallback to direct query with our extended type
     return await extendedClient.from('student_grades')
