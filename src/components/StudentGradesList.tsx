@@ -62,15 +62,25 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
           throw profilesError;
         }
         
-        // Get existing grades
-        const { data: grades, error: gradesError } = await supabase
-          .from('student_grades')
-          .select('*')
-          .eq('course_id', courseId);
-        
-        // If the table doesn't exist yet, we'll get an error but we can continue
-        if (gradesError && !gradesError.message.includes('does not exist')) {
-          console.error('Error fetching grades:', gradesError);
+        // Get existing grades with better error handling
+        let grades = [];
+        try {
+          const { data: gradesData, error: gradesError } = await supabase
+            .from('student_grades')
+            .select('*')
+            .eq('course_id', courseId);
+          
+          if (!gradesError) {
+            grades = gradesData || [];
+          } else if (gradesError.message.includes('does not exist')) {
+            console.log('student_grades table does not exist yet, continuing without grades');
+            // This is expected if the table doesn't exist yet
+          } else {
+            console.error('Error fetching grades:', gradesError);
+          }
+        } catch (gradeErr) {
+          console.error('Unexpected error fetching grades:', gradeErr);
+          // Continue without grades
         }
         
         // Combine the data
@@ -195,6 +205,18 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   };
   
   const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
+  
+  // Add a timeout to prevent infinite loading
+  useEffect(() => {
+    const loadingTimeout = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        console.log('Loading timeout reached, forcing display of students');
+      }
+    }, 5000); // 5 seconds timeout
+    
+    return () => clearTimeout(loadingTimeout);
+  }, [loading]);
   
   if (loading) {
     return (
