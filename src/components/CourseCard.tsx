@@ -7,8 +7,8 @@ interface CourseCardProps {
 }
 
 export const CourseCard = ({ course }: CourseCardProps) => {
-  // Define a placeholder image URL
-  const placeholderImage = "https://via.placeholder.com/400x220/d3c1ae/8b5e3c?text=Pa+Imazh"; // Brownish background, dark text
+  // Use a local fallback image instead of external placeholder
+  const placeholderImage = "/fallback-image.png";
   
   return (
     <Link to={`/courses/${course.id}`} className="block bg-white border border-lightGray rounded-lg overflow-hidden shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
