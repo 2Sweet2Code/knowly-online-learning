@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 
-type Assignment = {
-  id: string;
-  title: string;
-  description: string;
-  due_date?: string;
-  created_at: string;
-};
+import type { Database } from "@/integrations/supabase/types";
+
+type Assignment = Database['public']['Tables']['assignments']['Row'];
 
 interface AssignmentsSectionProps {
   courseId: string;
@@ -30,19 +26,12 @@ export const AssignmentsSection = ({ courseId }: AssignmentsSectionProps) => {
         .eq('course_id', courseId)
         .order('due_date', { ascending: true });
       if (error) {
+        console.error('Error fetching assignments:', error);
         setError('Gabim gjatë ngarkimit të detyrave.');
         setLoading(false);
         return;
       }
-      setAssignments(
-        (data || []).map((a: any) => ({
-          id: a.id,
-          title: a.title ?? '',
-          description: a.description ?? '',
-          due_date: a.due_date ?? '',
-          created_at: a.created_at ?? ''
-        })) as Assignment[]
-      );
+      setAssignments(data || []);
       setLoading(false);
     };
     fetchAssignments();

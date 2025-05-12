@@ -11,7 +11,11 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Loader2, Edit, Trash2, Users, Eye, EyeOff, BookOpen, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-export const DashboardCourses = () => {
+interface DashboardCoursesProps {
+  onCreateCourseClick?: () => void;
+}
+
+export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();

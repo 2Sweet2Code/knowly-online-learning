@@ -38,6 +38,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     
+    // Set a timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.warn('Profile fetch timeout - resetting loading state');
+      setIsLoading(false);
+    }, 10000); // 10 second timeout
+    
     let profile: Database['public']['Tables']['profiles']['Row'] | null = null;
     
     try {
@@ -107,6 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       setUser(null); 
     } finally {
+      clearTimeout(timeoutId); // Clear the timeout
       setIsLoading(false); 
     }
   };
@@ -213,10 +220,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
             user_metadata: meta,
           });
+          await fetchAndSetUser(currentSession?.user?.id);
         } else {
-          setUser(null); 
+          setUser(null);
+          setIsLoading(false); // Ensure loading state is reset when no user
         }
-        await fetchAndSetUser(currentSession?.user?.id);
       }
     );
     return () => subscription.unsubscribe();
@@ -255,6 +263,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         title: "Sukses!",
         description: "Jeni kyçur me sukses.",
       });
+      // Note: We don't reset isLoading here as the auth state change handler will do it
     } catch (error: unknown) {
       console.error('Login failed:', error);
       toast({
@@ -284,6 +293,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         title: "Llogaria u krijua!",
         description: "Ju jeni regjistruar me sukses.",
       });
+      // Note: We don't reset isLoading here as the auth state change handler will do it
     } catch (error: unknown) {
       console.error('Signup failed:', error);
       toast({

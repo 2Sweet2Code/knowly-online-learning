@@ -117,9 +117,14 @@ const CourseStudents = () => {
   });
 
   // Fetch all enrolled students (excluding instructor)
+  // Define the type for the join query result
   type EnrollmentWithProfile = {
     user_id: string;
-    profiles: Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'name' | 'role'> | null;
+    profiles: {
+      id: string;
+      name: string | null;
+      role: string | null;
+    } | null;
   };
   const {
     data: students,
@@ -135,13 +140,31 @@ const CourseStudents = () => {
         .eq('course_id', courseId);
       if (error) throw error;
       const instructorId = course?.instructor_id;
-      return ((data as EnrollmentWithProfile[] | null) || [])
-        .filter((enr) => enr.profiles && enr.user_id !== instructorId)
-        .map((enr) => ({
-          id: enr.profiles!.id,
-          name: enr.profiles!.name ?? null,
-          role: enr.profiles!.role ?? null,
-        }));
+      // Define a type for the data that includes the possibility of a SelectQueryError
+      type EnrollmentData = {
+        user_id: string;
+        profiles: { id?: string; name?: string | null; role?: string | null; error?: boolean } | null;
+      };
+      
+      // Cast the data to unknown first, then to our flexible type
+      const enrollments = data as unknown as EnrollmentData[];
+      
+      // Use a more flexible approach to handle the data
+      return (enrollments || []).filter((enr) => {
+        // Check if this is a valid enrollment with a user_id that's not the instructor
+        return enr && enr.user_id && enr.user_id !== instructorId;
+      }).map((enr) => {
+        // Try to extract profile data safely
+        const profile = enr.profiles && typeof enr.profiles === 'object' && !enr.profiles.error
+          ? enr.profiles
+          : null;
+          
+        return {
+          id: profile?.id || enr.user_id,
+          name: profile?.name || 'Unknown User',
+          role: profile?.role || 'student'
+        };
+      });
     },
     enabled: !!courseId && !!course,
   });

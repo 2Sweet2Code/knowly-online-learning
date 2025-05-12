@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Footer } from "../components/Footer";
 import { Header } from "../components/Header";
 import { DashboardSidebar } from "../components/dashboard/DashboardSidebar";
@@ -22,6 +22,24 @@ const DashboardPage = () => {
   const { user, isLoading } = useAuth();
   const [createCourseModalOpen, setCreateCourseModalOpen] = useState(false);
   const [timeoutError, setTimeoutError] = useState(false);
+  
+  // Add a timeout to handle cases where loading gets stuck
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    
+    if (isLoading) {
+      timeoutId = window.setTimeout(() => {
+        console.warn('Loading timeout reached in DashboardPage');
+        setTimeoutError(true);
+      }, 15000); // 15 second timeout
+    }
+    
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isLoading]);
 
   if (!isLoading && (!user || (user.role !== 'instructor' && user.role !== 'admin'))) {
     return <Navigate to="/" />;
@@ -29,9 +47,23 @@ const DashboardPage = () => {
   
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <Loader2 className="h-12 w-12 animate-spin text-brown mb-4" />
-        <p className="text-lg font-medium ml-2">Duke ngarkuar...</p>
+      <div className="flex flex-col justify-center items-center min-h-screen">
+        <div className="flex items-center">
+          <Loader2 className="h-12 w-12 animate-spin text-brown mb-4" />
+          <p className="text-lg font-medium ml-2">Duke ngarkuar...</p>
+        </div>
+        
+        {timeoutError && (
+          <div className="mt-4 text-center">
+            <p className="text-red-600 mb-2">Ngarkimi po merr shumë kohë.</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-4 py-2 bg-brown text-white rounded-md hover:bg-brown/80 transition-colors"
+            >
+              Rifresko faqen
+            </button>
+          </div>
+        )}
       </div>
     );
   }
