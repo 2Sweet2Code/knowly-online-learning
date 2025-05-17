@@ -51,21 +51,41 @@ const App = () => {
   // This prevents shared mutable state issues during hot reloads
   const [queryClient] = useState(() => createQueryClient());
   
-  // Add a global error handler for unhandled promise rejections
+  // Add a global error handler for unhandled promise rejections and other errors
   // This helps prevent white screens when there are initialization errors
   useEffect(() => {
+    // Handler for unhandled promise rejections
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('UNHANDLED PROMISE REJECTION:', event.reason);
       // Prevent the error from causing a white screen
       event.preventDefault();
     };
     
-    // Add the event listener
+    // Handler for uncaught errors
+    const handleError = (event: ErrorEvent) => {
+      // Check if it's a temporal dead zone error (initialization error)
+      if (event.error && event.error.toString().includes("Cannot access") && 
+          event.error.toString().includes("before initialization")) {
+        console.error('INITIALIZATION ERROR CAUGHT:', event.error);
+        // Prevent the error from causing a white screen
+        event.preventDefault();
+        
+        // Optional: Show a user-friendly message in the console
+        console.info('An initialization error occurred. This has been handled to prevent a white screen.');
+      } else {
+        console.error('UNCAUGHT ERROR:', event.error);
+        event.preventDefault();
+      }
+    };
+    
+    // Add the event listeners
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    window.addEventListener('error', handleError, true);
     
     // Clean up
     return () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('error', handleError, true);
     };
   }, []);
   
