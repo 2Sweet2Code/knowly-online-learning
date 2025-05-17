@@ -16,7 +16,7 @@ const ReactQueryDevtools =
 
 import HomePage from "./pages/HomePage";
 import CoursesPage from "./pages/CoursesPage";
-import CourseDetailPage from "./pages/CourseDetailPage";
+import CourseDetailWrapper from "./components/CourseDetailWrapper";
 import MySpacePage from "./pages/MySpacePage";
 import PrivacyPage from "./pages/PrivacyPage";
 import TermsPage from "./pages/TermsPage";
@@ -123,7 +123,7 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
-                <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+                <Route path="/courses/:courseId" element={<CourseDetailWrapper />} />
                 <Route path="/my-space" element={<MySpacePage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />

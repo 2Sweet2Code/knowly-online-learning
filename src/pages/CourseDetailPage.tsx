@@ -19,7 +19,11 @@ import { CourseComment, getCourseComments, insertCourseComment } from "@/types/c
 
 // CourseComment type is now imported from @/types/course-comments
 
-const CourseDetailPage = () => {
+interface CourseDetailPageProps {
+  initialCourseData?: Course | null;
+}
+
+const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => {
   const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'grades' | 'settings'>('stream');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
@@ -52,8 +56,9 @@ const CourseDetailPage = () => {
     };
   }, [courseId, queryLoading]);
   
-  // Fetch course details
+  // Fetch course details (use initialCourseData if provided)
   const { data: course, isLoading: queryLoading, error: queryError } = useQuery({
+    initialData: initialCourseData || undefined,
     queryKey: ['course', courseId],
     queryFn: async () => {
       if (!courseId) return null;
