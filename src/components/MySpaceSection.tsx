@@ -50,32 +50,67 @@ export const MySpaceSection = () => {
       
       // Get grades if available
       let grades: Array<{course_id: string; grade: number | null; feedback: string | null}> = [];
+      
       try {
-        // Use a more generic approach to handle the case where the table might not exist yet
-        const gradesResponse = await supabase.rpc('get_student_grades', {
-          user_id_param: user.id,
-          course_ids_param: enrolledCourseIds
-        }).catch(() => {
-          // If the RPC function doesn't exist, try direct query with error handling
-          return { data: null, error: new Error('RPC not available') };
-        });
+        // Try multiple approaches to get grades, with proper error handling
         
-        if (gradesResponse.data) {
-          grades = gradesResponse.data;
-        } else {
-          // Fallback to localStorage if available
+        // Approach 1: Try to use a custom SQL function via RPC if it exists
+        try {
+          const { data, error } = await supabase.functions.invoke('get-student-grades', {
+            body: { 
+              userId: user.id,
+              courseIds: enrolledCourseIds 
+            }
+          });
+          
+          if (!error && data && Array.isArray(data)) {
+            grades = data;
+            console.log('Successfully fetched grades via Edge Function');
+          }
+        } catch (functionError) {
+          console.log('Edge Function not available:', functionError);
+          // Continue to next approach
+        }
+        
+        // Approach 2: If grades are still empty, try direct table query
+        if (grades.length === 0) {
+          try {
+            // Use a type assertion to handle the table that might not be in the TypeScript definitions
+            const { data: directGrades, error: directError } = await supabase
+              .from('student_grades' as any)
+              .select('course_id, grade, feedback')
+              .eq('user_id', user.id)
+              .in('course_id', enrolledCourseIds);
+              
+            if (!directError && directGrades && Array.isArray(directGrades)) {
+              grades = directGrades as any;
+              console.log('Successfully fetched grades via direct query');
+            }
+          } catch (directQueryError) {
+            console.log('Direct query failed:', directQueryError);
+            // Continue to next approach
+          }
+        }
+        
+        // Approach 3: Fallback to localStorage if still no grades
+        if (grades.length === 0) {
           const localGrades = localStorage.getItem(`student_grades_${user.id}`);
           if (localGrades) {
             try {
-              grades = JSON.parse(localGrades);
+              const parsedGrades = JSON.parse(localGrades);
+              if (Array.isArray(parsedGrades)) {
+                grades = parsedGrades;
+                console.log('Successfully fetched grades from localStorage');
+              }
             } catch (e) {
               console.error('Error parsing local grades:', e);
             }
           }
         }
+        
       } catch (error) {
-        console.error('Error fetching grades:', error);
-        // Continue without grades if table doesn't exist yet
+        console.error('Error in grades fetching flow:', error);
+        // Continue without grades if all approaches fail
       }
       
       // Map enrollments with courses and grades
