@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
@@ -32,19 +32,36 @@ import { DashboardUserManagement } from "./components/dashboard/DashboardUserMan
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
 
-// Configure the QueryClient with safer defaults
-const createQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Safer error handling
-      retry: 1,
-      retryDelay: 1000,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      refetchOnWindowFocus: false,
-      refetchOnMount: true
+// Configure the QueryClient with safer defaults and proper error handling
+const createQueryClient = () => {
+  // Create a custom error handler for React Query
+  const queryErrorHandler = (error: unknown) => {
+    // Log the error but don't throw it
+    console.error('React Query error:', error);
+    // We intentionally don't rethrow to prevent unhandled rejections
+  };
+
+  // Return a new QueryClient with robust configuration
+  return new QueryClient({
+    // Add global error handlers at the cache level
+    queryCache: new QueryCache({
+      onError: queryErrorHandler,
+    }),
+    mutationCache: new MutationCache({
+      onError: queryErrorHandler,
+    }),
+    defaultOptions: {
+      queries: {
+        // Safer error handling
+        retry: 1,
+        retryDelay: 1000,
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        refetchOnWindowFocus: false,
+        refetchOnMount: true
+      }
     },
-  },
-});
+  });
+};
 
 const App = () => {
   // Create a new QueryClient instance for each app render
