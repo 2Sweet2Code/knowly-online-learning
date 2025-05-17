@@ -2,9 +2,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
+import { useState, useEffect } from "react";
 
 import HomePage from "./pages/HomePage";
 import CoursesPage from "./pages/CoursesPage";
@@ -25,9 +27,44 @@ import { DashboardUserManagement } from "./components/dashboard/DashboardUserMan
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
 
-const queryClient = new QueryClient();
+// Configure the QueryClient with safer defaults
+const createQueryClient = () => new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Safer error handling
+      retry: 1,
+      retryDelay: 1000,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+      refetchOnMount: true
+    },
+  },
+});
 
-const App = () => (
+const App = () => {
+  // Create a new QueryClient instance for each app render
+  // This prevents shared mutable state issues during hot reloads
+  const [queryClient] = useState(() => createQueryClient());
+  
+  // Add a global error handler for unhandled promise rejections
+  // This helps prevent white screens when there are initialization errors
+  useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('UNHANDLED PROMISE REJECTION:', event.reason);
+      // Prevent the error from causing a white screen
+      event.preventDefault();
+    };
+    
+    // Add the event listener
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+  
+  return (
   <QueryClientProvider client={queryClient}>
     <PayPalScriptProvider options={{ 
       clientId: "test", // Replace with your PayPal client ID in production
@@ -66,7 +103,9 @@ const App = () => (
         </TooltipProvider>
       </AuthProvider>
     </PayPalScriptProvider>
+    {process.env.NODE_ENV === 'development' && <ReactQueryDevtools />}
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;
