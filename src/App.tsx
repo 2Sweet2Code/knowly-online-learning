@@ -2,11 +2,16 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
+
+// Dynamically import DevTools to prevent build errors
+const ReactQueryDevtools = 
+  process.env.NODE_ENV === 'development' 
+    ? lazy(() => import('@tanstack/react-query-devtools').then(mod => ({ default: mod.ReactQueryDevtools })))
+    : () => null;
 
 import HomePage from "./pages/HomePage";
 import CoursesPage from "./pages/CoursesPage";
@@ -103,7 +108,11 @@ const App = () => {
         </TooltipProvider>
       </AuthProvider>
     </PayPalScriptProvider>
-    {process.env.NODE_ENV === 'development' && <ReactQueryDevtools />}
+    {process.env.NODE_ENV === 'development' && (
+      <Suspense fallback={null}>
+        <ReactQueryDevtools />
+      </Suspense>
+    )}
   </QueryClientProvider>
   );
 };
