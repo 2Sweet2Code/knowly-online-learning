@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { PayPalScriptProvider } from "@paypal/react-paypal-js";
 import React, { useState, useEffect, lazy, Suspense } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // Dynamically import DevTools to prevent build errors
 const ReactQueryDevtools = 
@@ -107,50 +108,52 @@ const App = () => {
   }, []);
   
   return (
-  <QueryClientProvider client={queryClient}>
-    <PayPalScriptProvider options={{ 
-      clientId: "test", // Replace with your PayPal client ID in production
-      currency: "EUR",
-      intent: "capture"
-    }}>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/courses" element={<CoursesPage />} />
-              <Route path="/courses/:courseId" element={<CourseDetailPage />} />
-              <Route path="/my-space" element={<MySpacePage />} />
-              <Route path="/privacy" element={<PrivacyPage />} />
-              <Route path="/terms" element={<TermsPage />} />
-              <Route path="/contact" element={<ContactPage />} />
-              <Route path="/dashboard/*" element={<DashboardLayout />}>
-                <Route index element={<DashboardOverview />} />
-                <Route path="courses">
-                  <Route index element={<DashboardCourses />} />
-                  <Route path=":courseId/*" element={<CourseManagementPage />} />
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <PayPalScriptProvider options={{ 
+        clientId: "test", // Replace with your PayPal client ID in production
+        currency: "EUR",
+        intent: "capture"
+      }}>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<HomePage />} />
+                <Route path="/courses" element={<CoursesPage />} />
+                <Route path="/courses/:courseId" element={<CourseDetailPage />} />
+                <Route path="/my-space" element={<MySpacePage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/dashboard/*" element={<DashboardLayout />}>
+                  <Route index element={<DashboardOverview />} />
+                  <Route path="courses">
+                    <Route index element={<DashboardCourses />} />
+                    <Route path=":courseId/*" element={<CourseManagementPage />} />
+                  </Route>
+                  <Route path="students" element={<DashboardStudents />} />
+                  <Route path="questions" element={<DashboardQuestions />} />
+                  <Route path="settings" element={<DashboardSettings />} />
+                  <Route path="user-management" element={<DashboardUserManagement />} />
+                  <Route path="content-moderation" element={<DashboardContentModeration />} />
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Route>
-                <Route path="students" element={<DashboardStudents />} />
-                <Route path="questions" element={<DashboardQuestions />} />
-                <Route path="settings" element={<DashboardSettings />} />
-                <Route path="user-management" element={<DashboardUserManagement />} />
-                <Route path="content-moderation" element={<DashboardContentModeration />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AuthProvider>
-    </PayPalScriptProvider>
-    {process.env.NODE_ENV === 'development' && (
-      <Suspense fallback={null}>
-        <ReactQueryDevtools />
-      </Suspense>
-    )}
-  </QueryClientProvider>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AuthProvider>
+      </PayPalScriptProvider>
+      {process.env.NODE_ENV === 'development' && (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools />
+        </Suspense>
+      )}
+    </QueryClientProvider>
+  </ErrorBoundary>
   );
 };
 
