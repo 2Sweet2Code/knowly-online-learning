@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User } from '../types';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError } from '@supabase/supabase-js';
@@ -29,12 +29,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [authInitialized, setAuthInitialized] = useState<boolean>(false);
   const { toast } = useToast();
 
-  const fetchAndSetUser = async (userId: string | undefined) => {
+  // Helper function to format error messages
+  const getErrorMessage = (error: unknown): string => {
+    if (error instanceof AuthError) {
+      switch (error.message) {
+        case 'Invalid login credentials':
+          return 'Email ose fjalëkalimi i pavlefshëm.';
+        case 'Email not confirmed':
+          return 'Ju lutemi konfirmoni emailin tuaj para se të kyçeni.';
+        case 'User already registered':
+          return 'Ky email është i regjistruar tashmë.';
+        case 'Password should be at least 6 characters':
+          return 'Fjalëkalimi duhet të jetë të paktën 6 karaktere.';
+        default:
+          return error.message || 'Ndodhi një gabim gjatë vërtetimit.';
+      }
+    } else if (error instanceof Error) {
+      return error.message;
+    } else {
+      return 'Ndodhi një gabim i papritur.';
+    }
+  };
+
+  // Function to fetch and set user data
+  const fetchAndSetUser = useCallback(async (userId: string | undefined) => {
     if (!userId) {
-      setUser(null); 
-      setIsLoading(false); 
+      setUser(null);
+      setIsLoading(false);
       return;
     }
     
@@ -47,13 +71,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let profile: Database['public']['Tables']['profiles']['Row'] | null = null;
     
     try {
+      // First get auth user data to ensure we have it before proceeding
+      const { data: authUserData, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !authUserData?.user) {
+        console.error('Error fetching auth user data:', authError);
+        throw authError || new Error('Auth user data not found');
+      }
+      
+      // Then fetch the profile data
       const { data: fetchedProfile, error: fetchError } = await supabase
         .from('profiles')
         .select('id, name, role, created_at, updated_at')
         .eq('id', userId)
         .single();
-
-      const { data: authUserData } = await supabase.auth.getUser();
 
       if (fetchError && fetchError.code === 'PGRST116') {
         console.log('Profile not found for user, attempting creation...');
@@ -80,13 +111,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       } else if (fetchError) {
         console.error('Error fetching user profile:', fetchError);
-        return; 
+        throw fetchError;
       } else {
         profile = fetchedProfile;
       }
       
-      if (profile && profile.id && profile.created_at && authUserData?.user) { 
-        const meta = authUserData.user.user_metadata;
+      if (profile && profile.id && profile.created_at) { 
+        const meta = authUserData.user.user_metadata || {};
         const userMetadataForState = {
           name: meta?.name as string | undefined, 
           role: (meta?.role === 'student' || meta?.role === 'instructor' || meta?.role === 'admin') ? meta.role : undefined, 
@@ -96,12 +127,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser({
           id: userId,
           name: userMetadataForState.name || profile.name || '',
-          email: authUserData?.user?.email || '', 
+          email: authUserData.user.email || '', 
           role: userMetadataForState.role || (profile.role as 'student' | 'instructor' | 'admin') || 'student',
           user_metadata: userMetadataForState 
         });
       } else {
-        console.error('Profile data is incomplete or null, or auth user not found. Cannot set user state.');
+        console.error('Profile data is incomplete or null. Cannot set user state.');
         setUser(null); 
       }
     } catch (error) {
@@ -116,9 +147,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       clearTimeout(timeoutId); // Clear the timeout
       setIsLoading(false); 
     }
-  };
+  }, [toast]);
 
-  const createUserProfile = async (userId: string): Promise<Database['public']['Tables']['profiles']['Row'] | null> => {
+  // Function to create a user profile
+  const createUserProfile = useCallback(async (userId: string): Promise<Database['public']['Tables']['profiles']['Row'] | null> => {
     try {
       const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
@@ -177,80 +209,89 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       return null;
     }
-  };
+  }, [toast]);
 
-
+  // Initialize authentication state
   useEffect(() => {
+    // Define this variable outside the async function to ensure it's initialized properly
+    let mounted = true;
+    
     const getInitialSession = async () => {
-      setIsLoading(true); 
-      const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error("Error fetching initial session:", error);
-        await fetchAndSetUser(undefined); 
-        setIsLoading(false); 
-        return;
-      }
-      setSession(initialSession);
-      if (initialSession?.user) {
-        const meta = initialSession.user.user_metadata;
-        setUser({
-          id: initialSession.user.id,
-          name: meta?.name || '',
-          email: initialSession.user.email || '',
-          role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
-          user_metadata: meta,
-        });
-        await fetchAndSetUser(initialSession?.user?.id); 
-      } else {
-        setIsLoading(false);
-      }
-    };
-    getInitialSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, currentSession) => {
-        setIsLoading(true); 
-        setSession(currentSession);
-        if (currentSession?.user) {
-          const meta = currentSession.user.user_metadata;
-          setUser({
-            id: currentSession.user.id,
-            name: meta?.name || '',
-            email: currentSession.user.email || '',
-            role: (meta?.role as 'student' | 'instructor' | 'admin') || 'student',
-            user_metadata: meta,
-          });
-          await fetchAndSetUser(currentSession?.user?.id);
+      if (!mounted) return;
+      
+      setIsLoading(true);
+      try {
+        // Get the session first
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        // Check if component is still mounted before updating state
+        if (!mounted) return;
+        
+        if (error) {
+          console.error("Error fetching initial session:", error);
+          setUser(null);
+          setIsLoading(false);
+          setAuthInitialized(true);
+          return;
+        }
+        
+        // Set the session state
+        setSession(initialSession);
+        
+        if (initialSession?.user) {
+          // Instead of setting user state directly here, call fetchAndSetUser to ensure consistency
+          await fetchAndSetUser(initialSession.user.id);
         } else {
           setUser(null);
-          setIsLoading(false); // Ensure loading state is reset when no user
+          setIsLoading(false);
+        }
+        
+        // Mark auth as initialized
+        setAuthInitialized(true);
+      } catch (err) {
+        console.error("Unexpected error during authentication:", err);
+        if (mounted) {
+          setUser(null);
+          setIsLoading(false);
+          setAuthInitialized(true);
         }
       }
-    );
-    return () => subscription.unsubscribe();
-   }, []);
+    };
+    
+    // Start the auth initialization process
+    getInitialSession();
 
-  const getErrorMessage = (error: unknown): string => {
-    if (error instanceof AuthError) {
-        switch (error.message) {
-          case 'Invalid login credentials':
-            return 'Email ose fjalëkalimi i pavlefshëm.';
-          case 'Email not confirmed':
-            return 'Ju lutemi konfirmoni emailin tuaj para se të kyçeni.';
-          case 'User already registered':
-            return 'Ky email është i regjistruar tashmë.';
-          case 'Password should be at least 6 characters':
-            return 'Fjalëkalimi duhet të jetë të paktën 6 karaktere.';
-          default:
-            return error.message || 'Ndodhi një gabim gjatë vërtetimit.';
+    // Set up auth state change listener
+    let subscription: { unsubscribe: () => void } | null = null;
+    
+    if (mounted) {
+      const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
+        if (!mounted) return;
+        
+        setSession(newSession);
+        
+        if (newSession?.user) {
+          // Use fetchAndSetUser to ensure consistent user state
+          fetchAndSetUser(newSession.user.id);
+        } else {
+          setUser(null);
+          setIsLoading(false);
         }
-    } else if (error instanceof Error) {
-        return error.message;
-    } else {
-        return 'Ndodhi një gabim i papritur.';
+      });
+      
+      subscription = data.subscription;
     }
-  };
 
+    // Cleanup function
+    return () => {
+      mounted = false;
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+    };
+  }, [fetchAndSetUser]); // Add fetchAndSetUser as a dependency
+
+  // Login function with improved error handling
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
@@ -258,12 +299,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         email,
         password
       });
+      
       if (error) throw error;
+      
       toast({
         title: "Sukses!",
         description: "Jeni kyçur me sukses.",
       });
-      // Note: We don't reset isLoading here as the auth state change handler will do it
+      // Auth state change handler will update the loading state
     } catch (error: unknown) {
       console.error('Login failed:', error);
       toast({
@@ -271,14 +314,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
+  // Signup function with improved error handling
   const signup = async (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin') => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -288,12 +332,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         }
       });
+      
       if (error) throw error;
+      
       toast({
         title: "Llogaria u krijua!",
         description: "Ju jeni regjistruar me sukses.",
       });
-      // Note: We don't reset isLoading here as the auth state change handler will do it
+      // Auth state change handler will update the loading state
     } catch (error: unknown) {
       console.error('Signup failed:', error);
       toast({
@@ -301,21 +347,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
+  // Logout function with improved error handling
   const logout = async () => {
     setIsLoading(true);
     try {
       const { error } = await supabase.auth.signOut();
+      
       if (error) throw error;
+      
+      // Explicitly clear user and session state
       setUser(null);
       setSession(null);
+      
       toast({
         title: "Ju dolet nga sistemi",
         description: "Jeni çkyçur me sukses.",
       });
+      
+      // Auth state change handler will handle the rest
     } catch (error: unknown) {
       console.error('Logout failed:', error);
       toast({
@@ -323,10 +376,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: getErrorMessage(error),
         variant: "destructive",
       });
-      setIsLoading(false); 
+      setIsLoading(false);
     }
   };
 
+  // Only render children when auth is initialized to prevent race conditions
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -337,7 +391,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signup, 
       logout 
     }}>
-      {children}
+      {authInitialized ? children : (
+        <div className="flex flex-col justify-center items-center min-h-screen">
+          <div className="animate-spin h-10 w-10 border-4 border-brown border-t-transparent rounded-full"></div>
+          <p className="mt-4 text-brown">Duke inicializuar...</p>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };
