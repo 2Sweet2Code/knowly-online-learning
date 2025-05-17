@@ -7,55 +7,43 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 
 const fetchCourses = async (category: string) => {
-  console.log('fetchCourses start for category:', category);
-  // Manual fetch test to diagnose network
-  console.log('manual fetch start');
   try {
-    const manualRes = await fetch(
-      'https://oemwaoaebmwdfrndohmh.supabase.co/rest/v1/courses?status=eq.active',
-      { method: 'GET', headers: {
-        apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lbXdhb2FlYm13ZGZybmRvaG1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM2NzQ2NDgsImV4cCI6MjA1OTI1MDY0OH0.KuPNahbiyWtJbWfLpo96ojHDJ-IY4l_kB842-H35J2E',
-        Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lbXdhb2FlYm13ZGZybmRvaG1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM2NzQ2NDgsImV4cCI6MjA1OTI1MDY0OH0.KuPNahbiyWtJbWfLpo96ojHDJ-IY4l_kB842-H35J2E`
-      }}
-    );
-    console.log('manual fetch status', manualRes.status);
-    const manualData = await manualRes.json();
-    console.log('manual fetch data', manualData);
-  } catch (e) {
-    console.error('manual fetch error', e);
-  }
-  let query = supabase.from('courses').select('*').eq('status', 'active');
-  
-  if (category !== 'all') {
-    query = query.eq('category', category);
-  }
-  
-  const { data, error } = await query;
-  console.log('fetchCourses result', { data, error });
-  
-  if (error) {
-    console.error("Error fetching public courses:", error);
+    // Query the courses table
+    let query = supabase.from('courses').select('*').eq('status', 'active');
+    
+    if (category !== 'all') {
+      query = query.eq('category', category);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error("Error fetching public courses:", error);
+      throw error;
+    }
+    
+    if (!data) return [];
+
+    return data.map(course => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      image: course.image,
+      category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+      instructor: course.instructor,
+      instructorId: course.instructor_id,
+      students: course.students || 0,
+      status: course.status as 'active' | 'draft',
+      price: course.price || 0,
+      isPaid: !!course.isPaid,
+      accessCode: course.accessCode,
+      created_at: course.created_at,
+      updated_at: course.updated_at
+    }));
+  } catch (error) {
+    console.error('Error in fetchCourses:', error);
     throw error;
   }
-  
-  if (!data) return [];
-
-  return data.map(course => ({
-    id: course.id,
-    title: course.title,
-    description: course.description,
-    image: course.image,
-    category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
-    instructor: course.instructor,
-    instructorId: course.instructor_id,
-    students: course.students || 0,
-    status: course.status as 'active' | 'draft',
-    price: course.price || 0,
-    isPaid: !!course.isPaid,
-    accessCode: course.accessCode,
-    created_at: course.created_at,
-    updated_at: course.updated_at
-  }));
 };
 
 export const CoursesSection = () => {
