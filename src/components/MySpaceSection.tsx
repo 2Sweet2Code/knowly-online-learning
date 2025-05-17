@@ -52,47 +52,25 @@ export const MySpaceSection = () => {
       let grades: Array<{course_id: string; grade: number | null; feedback: string | null}> = [];
       
       try {
-        // Try multiple approaches to get grades, with proper error handling
-        
-        // Approach 1: Try to use a custom SQL function via RPC if it exists
+        // Try direct table query first
         try {
-          const { data, error } = await supabase.functions.invoke('get-student-grades', {
-            body: { 
-              userId: user.id,
-              courseIds: enrolledCourseIds 
-            }
-          });
-          
-          if (!error && data && Array.isArray(data)) {
-            grades = data;
-            console.log('Successfully fetched grades via Edge Function');
+          // Use a type assertion to handle the table that might not be in the TypeScript definitions
+          const { data: directGrades, error: directError } = await supabase
+            .from('student_grades' as any)
+            .select('course_id, grade, feedback')
+            .eq('user_id', user.id)
+            .in('course_id', enrolledCourseIds);
+            
+          if (!directError && directGrades && Array.isArray(directGrades)) {
+            grades = directGrades as any;
+            console.log('Successfully fetched grades via direct query');
           }
-        } catch (functionError) {
-          console.log('Edge Function not available:', functionError);
-          // Continue to next approach
+        } catch (directQueryError) {
+          console.log('Direct query failed:', directQueryError);
+          // Continue to fallback approach
         }
         
-        // Approach 2: If grades are still empty, try direct table query
-        if (grades.length === 0) {
-          try {
-            // Use a type assertion to handle the table that might not be in the TypeScript definitions
-            const { data: directGrades, error: directError } = await supabase
-              .from('student_grades' as any)
-              .select('course_id, grade, feedback')
-              .eq('user_id', user.id)
-              .in('course_id', enrolledCourseIds);
-              
-            if (!directError && directGrades && Array.isArray(directGrades)) {
-              grades = directGrades as any;
-              console.log('Successfully fetched grades via direct query');
-            }
-          } catch (directQueryError) {
-            console.log('Direct query failed:', directQueryError);
-            // Continue to next approach
-          }
-        }
-        
-        // Approach 3: Fallback to localStorage if still no grades
+        // Fallback to localStorage if no grades from direct query
         if (grades.length === 0) {
           const localGrades = localStorage.getItem(`student_grades_${user.id}`);
           if (localGrades) {
