@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --config vite.minimal-html.config.ts",
+    "build": "vite build",
+    "build:minimal": "vite build --config vite.minimal-html.config.ts",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
