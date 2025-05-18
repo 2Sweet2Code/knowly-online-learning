@@ -3,9 +3,20 @@ import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle, RefreshCw, Plus, BookOpen, GraduationCap } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw, Plus, BookOpen, GraduationCap, Megaphone, Clock } from "lucide-react";
 import { AnnouncementModal } from "./AnnouncementModal";
 import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNow } from "date-fns";
+import { enUS as en, sq } from 'date-fns/locale';
+
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  course_id: string | null;
+  course_title?: string;
+}
 
 interface DashboardOverviewProps {
   onCreateCourseClick?: () => void;
@@ -39,10 +50,10 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
   // Query for instructor courses
   const {
     data: courses = [],
-    isLoading,
-    isError,
-    error,
-    refetch
+    isLoading: isLoadingCourses,
+    isError: isCoursesError,
+    error: coursesError,
+    refetch: refetchCourses
   } = useQuery<DatabaseCourse[]>({
     queryKey: ['instructorCourses', user?.id],
     queryFn: async () => {
@@ -62,6 +73,51 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
     },
     enabled: !!user?.id
   });
+
+  // Query for announcements
+  const {
+    data: announcements = [],
+    isLoading: isLoadingAnnouncements,
+    isError: isAnnouncementsError,
+    error: announcementsError,
+    refetch: refetchAnnouncements
+  } = useQuery<Announcement[]>({
+    queryKey: ['instructorAnnouncements', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      
+      // First get all course IDs for this instructor
+      const { data: instructorCourses, error: coursesError } = await supabase
+        .from('courses')
+        .select('id, title')
+        .eq('instructor_id', user.id);
+      
+      if (coursesError) throw coursesError;
+      if (!instructorCourses?.length) return [];
+      
+      // Get announcements for these courses
+      const courseIds = instructorCourses.map(course => course.id);
+      const { data: announcementsData, error: announcementsError } = await supabase
+        .from('announcements')
+        .select('*')
+        .in('course_id', courseIds)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      if (announcementsError) throw announcementsError;
+      
+      // Add course titles to announcements
+      return announcementsData.map(announcement => ({
+        ...announcement,
+        course_title: instructorCourses.find(c => c.id === announcement.course_id)?.title || 'General'
+      }));
+    },
+    enabled: !!user?.id && courses.length > 0
+  });
+  
+  const isLoading = isLoadingCourses || isLoadingAnnouncements;
+  const isError = isCoursesError || isAnnouncementsError;
+  const error = coursesError || announcementsError;
 
   // Add timeout for loading
   useEffect(() => {
@@ -125,6 +181,18 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
 
   const handleCreateAnnouncement = () => {
     setIsAnnouncementModalOpen(true);
+  };
+  
+  const refetch = () => {
+    refetchCourses();
+    refetchAnnouncements();
+  };
+  
+  const formatDate = (dateString: string) => {
+    return formatDistanceToNow(new Date(dateString), { 
+      addSuffix: true,
+      locale: document.documentElement.lang === 'sq' ? sq : en 
+    });
   };
 
   return (
@@ -224,6 +292,75 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
                     </button>
                   </div>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {/* Recent Announcements */}
+      <div className="mb-8">
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="text-xl font-medium">Njoftimet e Fundit</h4>
+          {courses.length > 0 && (
+            <button 
+              onClick={handleCreateAnnouncement}
+              className="flex items-center text-sm text-brown hover:text-brown/80 transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Krijo Njoftim
+            </button>
+          )}
+        </div>
+        
+        {isLoadingAnnouncements ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-brown" />
+          </div>
+        ) : announcements.length === 0 ? (
+          <div className="bg-cream/50 rounded-lg p-6 text-center">
+            <Megaphone className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+            <p className="text-gray-600">Nuk ka njoftime për të shfaqur.</p>
+            {courses.length > 0 && (
+              <button 
+                onClick={handleCreateAnnouncement}
+                className="mt-3 flex items-center px-4 py-2 bg-brown text-white rounded-md hover:bg-brown/80 transition-colors mx-auto text-sm"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Krijo Njoftimin e Parë
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {announcements.map((announcement) => (
+              <div 
+                key={announcement.id} 
+                className="bg-white rounded-lg shadow-sm p-4 border border-gray-100 hover:shadow-md transition-shadow"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h5 className="font-medium text-lg mb-1">{announcement.title}</h5>
+                    {announcement.course_title && (
+                      <span className="inline-block bg-cream text-brown text-xs px-2 py-1 rounded-full mb-2">
+                        {announcement.course_title}
+                      </span>
+                    )}
+                    <p className="text-gray-600 text-sm line-clamp-2">{announcement.content}</p>
+                  </div>
+                  <div className="flex items-center text-xs text-gray-500 whitespace-nowrap ml-2">
+                    <Clock className="h-3 w-3 mr-1" />
+                    {formatDate(announcement.created_at)}
+                  </div>
+                </div>
+                {announcement.course_id && (
+                  <button 
+                    onClick={() => navigate(`/dashboard/courses/${announcement.course_id}`)}
+                    className="mt-2 text-sm text-brown hover:underline"
+                  >
+                    Shiko Kursin →
+                  </button>
+                )}
               </div>
             ))}
           </div>

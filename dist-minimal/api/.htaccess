@@ -1,0 +1,4 @@
+
+RewriteEngine On
+RewriteRule ^([^/]+)/([^/]+)/?$ index.php?controller=$1&action=$2 [QSA,L]
+RewriteRule ^([^/]+)/?$ index.php?controller=$1 [QSA,L]

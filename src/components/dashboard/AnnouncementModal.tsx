@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
+
+interface Course {
+  id: string;
+  title: string;
+}
 
 interface AnnouncementModalProps {
   isOpen: boolean;
@@ -15,6 +20,7 @@ interface AnnouncementModalProps {
 interface FormErrors {
   title?: string;
   content?: string;
+  course?: string;
 }
 
 export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementModalProps) => {
@@ -24,8 +30,63 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(courseId || null);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingCourses, setIsLoadingCourses] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
+  
+  // Fetch courses when the modal opens
+  useEffect(() => {
+    const fetchCourses = async () => {
+      if (!user?.id) return;
+      
+      setIsLoadingCourses(true);
+      try {
+        const { data, error } = await supabase
+          .from('courses')
+          .select('id, title')
+          .eq('instructor_id', user.id)
+          .order('title');
+          
+        if (error) throw error;
+        
+        setCourses(data || []);
+        
+        // If there's only one course and no course is selected, select it by default
+        if (data?.length === 1 && !selectedCourseId) {
+          setSelectedCourseId(data[0].id);
+        }
+      } catch (error) {
+        console.error('Error fetching courses:', error);
+        toast({
+          title: 'Gabim',
+          description: 'Ndodhi një gabim gjatë ngarkimit të kurseve.',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoadingCourses(false);
+      }
+    };
+    
+    if (isOpen) {
+      fetchCourses();
+    }
+  }, [isOpen, user?.id, selectedCourseId, toast]);
+  
+  // Reset form when modal is closed
+  useEffect(() => {
+    if (!isOpen) {
+      // Small delay to allow for the closing animation
+      const timer = setTimeout(() => {
+        setTitle('');
+        setContent('');
+        setErrors({});
+      }, 300);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
@@ -62,6 +123,14 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
       return;
     }
 
+    if (!selectedCourseId && courses.length > 0) {
+      setErrors(prev => ({
+        ...prev,
+        course: 'Ju lutem zgjidhni një kurs'
+      }));
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -71,26 +140,26 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
         content: content.trim(),
         instructor_id: user.id,
         created_at: new Date().toISOString(),
-        course_id: courseId || null,
+        course_id: selectedCourseId,
         instructor_name: user.name || 'Instructor'
       };
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('announcements')
-        .insert(announcementData);
+        .insert(announcementData)
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Reset form and close modal
-      setTitle('');
-      setContent('');
-      onClose();
-
       // Invalidate queries to refresh the list
-      queryClient.invalidateQueries({ queryKey: ['announcements'] });
-      if (courseId) {
-        queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['instructorAnnouncements'] });
+      if (selectedCourseId) {
+        queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', selectedCourseId] });
       }
+
+      // Close the modal
+      onClose();
 
       toast({
         title: 'Sukses',
@@ -101,7 +170,7 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
       console.error('Error creating announcement:', error);
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë publikimit të njoftimit.',
+        description: 'Ndodhi një gabim gjatë publikimit të njoftimit. Ju lutem provoni përsëri më vonë.',
         variant: 'destructive',
       });
     } finally {
@@ -110,72 +179,127 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[600px]">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Krijo Njoftim të Ri</DialogTitle>
+          <DialogTitle className="text-xl font-semibold text-gray-900">
+            Krijo Njoftim të Ri
+          </DialogTitle>
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+          >
+            <X className="h-5 w-5" />
+            <span className="sr-only">Mbyll</span>
+          </button>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          {isLoadingCourses ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="h-6 w-6 animate-spin text-brown" />
+            </div>
+          ) : courses.length > 0 ? (
+            <div>
+              <label htmlFor="course" className="block text-sm font-medium text-gray-700 mb-1">
+                Kursi *
+              </label>
+              <select
+                id="course"
+                value={selectedCourseId || ''}
+                onChange={(e) => setSelectedCourseId(e.target.value || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brown focus:border-transparent"
+              >
+                <option value="">Zgjidh një kurs</option>
+                {courses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.title}
+                  </option>
+                ))}
+              </select>
+              {errors.course && <p className="mt-1 text-sm text-red-600">{errors.course}</p>}
+            </div>
+          ) : (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg
+                    className="h-5 w-5 text-yellow-400"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-yellow-700">
+                    Nuk keni asnjë kurs aktiv. Ju duhet të krijoni së pari një kurs para se të publikoni njoftime.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-              Titulli <span className="text-red-500">*</span>
+              Titulli *
             </label>
             <input
               id="title"
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className={`w-full px-3 py-2 border ${
-                errors.title ? 'border-red-300' : 'border-gray-300'
-              } rounded-md shadow-sm focus:ring-brown-500 focus:border-brown-500`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brown focus:border-transparent"
               placeholder="Shkruaj titullin e njoftimit"
+              disabled={isLoading || courses.length === 0}
             />
-            {errors.title && (
-              <p className="mt-1 text-sm text-red-600">{errors.title}</p>
-            )}
+            {errors.title && <p className="mt-1 text-sm text-red-600">{errors.title}</p>}
           </div>
 
           <div>
             <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1">
-              Përmbajtja <span className="text-red-500">*</span>
+              Përmbajtja *
             </label>
             <textarea
               id="content"
               rows={6}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className={`w-full px-3 py-2 border ${
-                errors.content ? 'border-red-300' : 'border-gray-300'
-              } rounded-md shadow-sm focus:ring-brown-500 focus:border-brown-500`}
-              placeholder="Shkruaj përmbajtjen e njoftimit"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-brown focus:border-transparent"
+              placeholder="Shkruaj përmbajtjen e njoftimit..."
+              disabled={isLoading || courses.length === 0}
             />
-            {errors.content && (
-              <p className="mt-1 text-sm text-red-600">{errors.content}</p>
-            )}
+            <p className="mt-1 text-xs text-gray-500">
+              Përmbajtja mund të përmbajë formatim të thjeshtë HTML si &lt;b&gt;, &lt;i&gt;, &lt;a&gt;.
+            </p>
+            {errors.content && <p className="mt-1 text-sm text-red-600">{errors.content}</p>}
           </div>
 
           <DialogFooter className="mt-6">
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brown-500"
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brown disabled:opacity-50"
               disabled={isLoading}
             >
               Anulo
             </button>
             <button
               type="submit"
-              className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-brown hover:bg-brown-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brown-500 disabled:opacity-50"
-              disabled={isLoading}
+              className="ml-3 inline-flex justify-center px-4 py-2 text-sm font-medium text-white bg-brown border border-transparent rounded-md shadow-sm hover:bg-brown/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brown disabled:opacity-50"
+              disabled={isLoading || courses.length === 0}
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Po publikoj...
                 </>
               ) : (
-                'Publiko Njoftim'
+                'Publiko Njoftimin'
               )}
             </button>
           </DialogFooter>

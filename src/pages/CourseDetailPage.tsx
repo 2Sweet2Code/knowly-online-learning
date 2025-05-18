@@ -3,20 +3,19 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import type { PostgrestError } from '@supabase/supabase-js';
 import { CourseContentViewer } from "@/components/course/CourseContentViewer";
-import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle, PlusCircle } from "lucide-react";
+import { Loader2, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
-import type { PostgrestError } from '@supabase/postgrest-js';
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Course } from "@/types";
-import type { Database } from '@/types/database.types';
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { ClassmatesList } from "../components/ClassmatesList";
 import { StudentGradesList } from "../components/StudentGradesList";
-import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
+import { CourseAnnouncements } from "@/components/course/CourseAnnouncements";
 
 interface CourseAdmin {
   id: string;
@@ -96,23 +95,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-interface Announcement {
-  id: string;
-  course_id: string;
-  title: string;
-  content: string;
-  is_pinned: boolean;
-  created_at: string;
-  updated_at?: string;
-  created_by: string;
-  profiles?: {
-    full_name: string;
-    avatar_url: string | null;
-  };
-  full_name: string;
-  avatar_url: string | null;
-}
-
 interface CourseDetailPageProps {
   initialCourseData?: Course | null;
 }
@@ -146,8 +128,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   const [isAdmin, setIsAdmin] = useState(false);
   
   // Announcements state
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  // Note: Announcements are now managed by the CourseAnnouncements component
   
   // Extract course code from title
   const codeMatch = course?.title?.match(/\[(.*?)\]/);
@@ -416,54 +397,11 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
               
               {/* Tab content */}
               <div>
-                {tab === 'stream' && (
-                  <div>
-                    {isInstructor && (
-                      <div className="mb-6">
-                        <Button 
-                          onClick={() => setIsAnnouncementModalOpen(true)}
-                          className="flex items-center"
-                        >
-                          <PlusCircle className="mr-2 h-4 w-4" />
-                          New Announcement
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {/* Announcements list */}
-                    <div className="space-y-6">
-                      {announcements.length > 0 ? (
-                        announcements.map((announcement) => (
-                          <div key={announcement.id} className="bg-gray-50 p-4 rounded-lg">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <h3 className="font-medium text-gray-900">{announcement.title}</h3>
-                                <p className="text-sm text-gray-500">
-                                  Posted by {announcement.full_name || 'Instructor'} • {formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true })}
-                                </p>
-                              </div>
-                              {announcement.is_pinned && (
-                                <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">
-                                  Pinned
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-2 prose prose-sm max-w-none">
-                              {announcement.content}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-12">
-                          <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
-                          <h3 className="mt-2 text-sm font-medium text-gray-900">No announcements</h3>
-                          <p className="mt-1 text-sm text-gray-500">
-                            There are no announcements for this course yet.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                {tab === 'stream' && courseId && (
+                  <CourseAnnouncements 
+                    courseId={courseId} 
+                    isInstructor={isInstructor} 
+                  />
                 )}
                 
                 {tab === 'content' && (
@@ -496,17 +434,6 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
         ) : null}
       </main>
       <Footer />
-      
-      {/* Announcement modal */}
-      <AnnouncementModal
-        isOpen={isAnnouncementModalOpen}
-        onClose={() => {
-          setIsAnnouncementModalOpen(false);
-          // Refresh announcements
-          queryClient.invalidateQueries({ queryKey: ['announcements', courseId] });
-        }}
-        courseId={courseId}
-      />
     </div>
   );
 };
