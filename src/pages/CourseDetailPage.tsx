@@ -285,35 +285,25 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
       return;
     }
     
+    // Skip if already an instructor
+    if (isInstructor) {
+      setIsClassAdmin(true);
+      return;
+    }
+    
     setIsCheckingAdminStatus(true);
     
     // Simple function to check admin status
     const checkAdminStatus = async () => {
       try {
-        // Direct database query to check admin status with type assertion
-        // Using a type assertion to avoid deep type instantiation issues
+        // Use RPC with proper type safety
         const { data, error } = await (supabase as unknown as {
-          from: (table: string) => {
-            select: (columns: string) => {
-              eq: (column: string, value: string) => {
-                eq: (column: string, value: string) => {
-                  eq: (column: string, value: string) => {
-                    limit: (n: number) => Promise<{
-                      data: Array<{id: string}> | null;
-                      error: { message?: string } | null;
-                    }>
-                  }
-                }
-              }
-            }
-          }
-        })
-          .from('course_admins')
-          .select('id')
-          .eq('course_id', courseId)
-          .eq('user_id', user.id)
-          .eq('status', 'approved')
-          .limit(1);
+          rpc: (fn: string, params: { user_id: string; course_id: string }) => 
+            Promise<{ data: boolean; error: { message: string } | null }>
+        }).rpc('check_course_admin', { 
+          user_id: user.id, 
+          course_id: courseId 
+        });
         
         if (error) {
           console.error('Error checking admin status:', error.message);
@@ -331,7 +321,7 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
     };
     
     checkAdminStatus();
-  }, [user?.id, courseId]);
+  }, [user?.id, courseId, isInstructor]);
   // Define isStudent based on user role and admin status
   const isStudent = !!user && !isInstructor && user.role !== 'admin' && !isClassAdmin;
 
