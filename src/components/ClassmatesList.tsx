@@ -1,28 +1,41 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { User } from "@/types";
+import type { User } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, LogOut } from "lucide-react";
-// User type must include: id, name, role, email
+import { Loader2, LogOut, User as UserIcon, UserCog } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+// Define a more specific type that extends the base User type
+interface Classmate {
+  id: string;
+  name: string;
+  email: string;
+  role: 'student' | 'instructor' | 'admin';
+  avatar_url?: string;
+}
 
 interface ClassmatesListProps {
   courseId: string;
 }
 
 export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
-  const [classmates, setClassmates] = useState<User[]>([]);
+  const [classmates, setClassmates] = useState<Classmate[]>([]);
+  const [isLeavingClass, setIsLeavingClass] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isLeavingClass, setIsLeavingClass] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    if (!courseId) return;
+    
     const fetchClassmates = async () => {
       setLoading(true);
       setError(null);
@@ -68,7 +81,7 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         const userIds = enrollments.map(e => e.user_id);
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, name, role')
+          .select('id, name, role, email, avatar_url')
           .in('id', userIds);
         
         if (profilesError) {
@@ -76,19 +89,15 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         }
         
         // Map profiles to user objects
-        const validClassmates = profiles.map(profile => {
-          // Only accept valid roles
-          const role = ['student', 'instructor', 'admin'].includes(profile.role)
-            ? (profile.role as 'student' | 'instructor' | 'admin')
-            : 'student';
-          
-          return {
-            id: profile.id,
-            name: profile.name || 'Student',
-            role,
-            email: ''
-          };
-        }) as User[];
+        const validClassmates = (profiles || []).map(profile => ({
+          id: profile.id,
+          name: profile.name || 'Student',
+          email: profile.email || '',
+          role: (['student', 'instructor', 'admin'].includes(profile.role) 
+            ? profile.role 
+            : 'student') as 'student' | 'instructor' | 'admin',
+          avatar_url: profile.avatar_url
+        }));
         
         setClassmates(validClassmates);
       } catch (error) {
@@ -105,42 +114,32 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
   const handleLeaveClass = async () => {
     if (!user || !courseId) return;
     
+    setIsLeavingClass(true);
+    
     try {
-      setIsLeavingClass(true);
-      
-      // Delete the enrollment record
-      const { error: deleteError } = await supabase
+      // Remove user from enrollments
+      const { error } = await supabase
         .from('enrollments')
         .delete()
-        .eq('course_id', courseId)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('course_id', courseId);
       
-      if (deleteError) {
-        throw deleteError;
-      }
+      if (error) throw error;
       
-      // Update the students count in the course
-      const { error: updateError } = await supabase
-        .from('courses')
-        .update({ students: Math.max(0, (classmates.length - 1)) })
-        .eq('id', courseId);
-      
-      if (updateError) {
-        console.error('Error updating student count:', updateError);
-      }
+      // Update local state
+      setClassmates(prev => prev.filter(c => c.id !== user.id));
       
       // Show success message
       toast({
-        title: 'Sukses!',
-        description: 'Ju keni dalë nga ky kurs me sukses.',
+        title: 'Sukses',
+        description: 'Jeni larguar me sukses nga ky kurs.',
+        variant: 'default',
       });
       
-      // Invalidate queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['enrollments', user.id] });
-      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
-      
-      // Navigate back to courses page
-      navigate('/courses');
+      // Redirect to courses page after a short delay
+      setTimeout(() => {
+        navigate('/courses');
+      }, 1500);
       
     } catch (error) {
       console.error('Error leaving class:', error);
@@ -154,52 +153,115 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
     }
   };
 
-  if (loading) return <div className="p-4 text-center">Po ngarkohen studentët...<div className="mt-2 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-brown" /></div></div>;
-  if (error) return <div className="p-4 text-center text-red-500">{error}</div>;
-  if (!classmates.length) return <div className="p-4 text-center">Nuk ka studentë të regjistruar ende.</div>;
+  if (loading) {
+    return (
+      <div className="p-4 text-center">
+        Po ngarkohen studentët...
+        <div className="mt-2 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-brown" />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="p-4 text-center text-red-500">{error}</div>;
+  }
+
+  if (!classmates.length) {
+    return <div className="p-4 text-center">Nuk ka studentë të regjistruar ende.</div>;
+  }
+
+  // Separate instructors and students
+  const instructors = classmates.filter(c => c.role === 'instructor' || c.role === 'admin');
+  const students = classmates.filter(c => c.role === 'student');
+
+  const renderUserCard = (classmate: Classmate, isInstructor: boolean = false) => (
+    <div key={classmate.id} className="flex items-center justify-between p-3 bg-white rounded-lg shadow hover:shadow-md transition-shadow">
+      <div className="flex items-center space-x-3">
+        <Avatar>
+          <AvatarImage src={classmate.avatar_url} alt={classmate.name} />
+          <AvatarFallback>
+            <UserIcon className="h-4 w-4" />
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{classmate.name}</p>
+            {isInstructor && (
+              <Badge variant="outline" className="text-xs">
+                {classmate.role === 'admin' ? 'Admin' : 'Instruktor'}
+              </Badge>
+            )}
+          </div>
+          <p className="text-sm text-gray-500">{classmate.email}</p>
+        </div>
+      </div>
+      {classmate.id === user?.id && (
+        <button
+          onClick={handleLeaveClass}
+          disabled={isLeavingClass}
+          className="text-sm text-red-600 hover:text-red-800 flex items-center gap-1 disabled:opacity-50"
+        >
+          {isLeavingClass ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Po ikni...
+            </>
+          ) : (
+            <>
+              <LogOut className="h-4 w-4" />
+              Dil nga klasa
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="mt-6">
-      <div className="flex justify-between items-center mb-4">
-        <h4 className="font-semibold">Studentët në këtë kurs: ({classmates.length})</h4>
-        {user && classmates.some(student => student.id === user.id) && (
-          <button 
-            onClick={handleLeaveClass}
-            disabled={isLeavingClass}
-            className="btn btn-secondary btn-sm flex items-center gap-1"
-          >
-            {isLeavingClass ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Duke dalë...
-              </>
-            ) : (
-              <>
-                <LogOut className="h-3 w-3" />
-                Dil nga Kursi
-              </>
-            )}
-          </button>
-        )}
-      </div>
-      <ul className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-        {classmates.map((student) => (
-          <li key={student.id} className="bg-cream rounded px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="w-8 h-8 rounded-full bg-brown/20 flex items-center justify-center text-brown mr-3">
-                {student.name?.charAt(0).toUpperCase() || 'S'}
-              </div>
-              <div>
-                <span className="font-medium block">{student.name}</span>
-                <span className="text-xs text-gray-500 block">{student.role}</span>
-              </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <UserCog className="h-5 w-5" /> Instruktorët
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
             </div>
-            {student.id === user?.id && (
-              <span className="text-xs bg-gold/20 text-brown px-2 py-1 rounded">Ti</span>
-            )}
-          </li>
-        ))}
-      </ul>
+          ) : instructors.length === 0 ? (
+            <div className="text-center py-4 text-gray-500">Nuk ka instruktorë të regjistruar.</div>
+          ) : (
+            <div className="space-y-2">
+              {instructors.map(instructor => renderUserCard(instructor, true))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <UserIcon className="h-5 w-5" /> Studentët
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+            </div>
+          ) : students.length === 0 ? (
+            <div className="text-center py-4 text-gray-500">Nuk ka studentë të regjistruar ende.</div>
+          ) : (
+            <div className="space-y-2">
+              {students.map(student => renderUserCard(student))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

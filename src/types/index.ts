@@ -15,22 +15,20 @@ export interface Course {
   title: string;
   description: string;
   image: string;
-  category: 'programim' | 'dizajn' | 'marketing' | 'other';
+  category: string;
   instructor: string;
-  instructor_id: string; // Changed from instructorId to match database
+  instructorId: string;
+  instructor_id?: string; // For database compatibility
+  instructorAvatar?: string;
   students: number;
-  status: 'active' | 'draft';
-  access_code?: string; // Changed from accessCode to match database
-  price?: number;
-  is_paid?: boolean; // Changed from isPaid to match database
-  created_at?: string;
-  updated_at?: string;
-  allow_admin_applications?: boolean;
-  
-  // Backward compatibility
-  instructorId?: string; // Keep for backward compatibility
-  accessCode?: string;   // Keep for backward compatibility
-  isPaid?: boolean;      // Keep for backward compatibility
+  status: string;
+  price: number;
+  isPaid: boolean;
+  is_paid?: boolean; // For database compatibility
+  created_at: string;
+  updated_at: string;
+  accessCode?: string;
+  access_code?: string; // For database compatibility
 }
 
 export interface Enrollment {
