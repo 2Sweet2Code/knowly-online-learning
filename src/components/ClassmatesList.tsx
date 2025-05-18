@@ -41,17 +41,27 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       setError(null);
       
       try {
-        // First get all enrollments for this course
+        // First get all enrollments for this course with user details
         const { data: enrollments, error: enrollmentsError } = await supabase
           .from('enrollments')
-          .select('user_id')
+          .select(`
+            user_id,
+            profiles (
+              id,
+              name,
+              email,
+              role,
+              avatar_url
+            )
+          `)
           .eq('course_id', courseId);
         
         if (enrollmentsError) {
+          console.error('Error fetching enrollments:', enrollmentsError);
           throw enrollmentsError;
         }
         
-        if (!enrollments || !enrollments.length) {
+        if (!enrollments || enrollments.length === 0) {
           setClassmates([]);
           setLoading(false);
           return;
@@ -77,31 +87,22 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
           // Continue anyway - this is not critical
         }
         
-        // Get user profiles separately to avoid join issues
-        const userIds = enrollments.map(e => e.user_id);
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, name, role, email, avatar_url')
-          .in('id', userIds);
-        
-        if (profilesError) {
-          throw profilesError;
-        }
-        
-        // Map profiles to user objects
-        const validClassmates = (profiles || []).map(profile => ({
-          id: profile.id,
-          name: profile.name || 'Student',
-          email: profile.email || '',
-          role: (['student', 'instructor', 'admin'].includes(profile.role) 
-            ? profile.role 
-            : 'student') as 'student' | 'instructor' | 'admin',
-          avatar_url: profile.avatar_url
-        }));
-        
+        // Process the enrollments to get student data
+        const validClassmates = enrollments
+          .filter(e => e.profiles) // Filter out any enrollments without profile data
+          .map(enrollment => ({
+            id: enrollment.user_id,
+            name: enrollment.profiles?.name || 'Student',
+            email: enrollment.profiles?.email || '',
+            role: (['student', 'instructor', 'admin'].includes(enrollment.profiles?.role) 
+              ? enrollment.profiles.role 
+              : 'student') as 'student' | 'instructor' | 'admin',
+            avatar_url: enrollment.profiles?.avatar_url
+          }));
+          
         setClassmates(validClassmates);
       } catch (error) {
-        console.error('Error fetching classmates:', error);
+        console.error('Error processing enrollments:', error);
         setError('Gabim gjatë ngarkimit të studentëve.');
       } finally {
         setLoading(false);
@@ -121,10 +122,15 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       const { error } = await supabase
         .from('enrollments')
         .delete()
-        .eq('user_id', user.id)
-        .eq('course_id', courseId);
+        .match({
+          user_id: user.id,
+          course_id: courseId
+        });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error removing enrollment:', error);
+        throw error;
+      }
       
       // Update local state
       setClassmates(prev => prev.filter(c => c.id !== user.id));
@@ -135,6 +141,16 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         description: 'Jeni larguar me sukses nga ky kurs.',
         variant: 'default',
       });
+      
+      // Update the course student count
+      try {
+        await supabase.rpc('decrement_student_count', {
+          course_id: courseId
+        });
+      } catch (countError) {
+        console.error('Error updating student count:', countError);
+        // Not critical if this fails
+      }
       
       // Redirect to courses page after a short delay
       setTimeout(() => {

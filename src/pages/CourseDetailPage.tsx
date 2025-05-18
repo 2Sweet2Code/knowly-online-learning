@@ -104,6 +104,21 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+// Import types from database
+type Announcement = {
+  id: string;
+  course_id: string;
+  instructor_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at?: string;
+  profiles?: {
+    full_name: string;
+    avatar_url: string | null;
+  };
+};
+
 // Import CourseComment type from database types
 import type { CourseComment } from '@/types/database.types';
 
@@ -194,31 +209,63 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   });
   
   // Fetch announcements for this course
-  const { data: announcements = [] } = useQuery({
+  const { data: announcements = [] } = useQuery<Announcement[]>({
     queryKey: ['announcements', courseId],
     queryFn: async () => {
       if (!courseId) return [];
       
-      const { data, error } = await supabase
-        .from('announcements')
-        .select(`
-          *,
-          profiles!instructor_id (
-            full_name,
-            avatar_url
-          )
-        `)
-        .eq('course_id', courseId)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching announcements:', error);
+      try {
+        // First try to get announcements with instructor info
+        const { data, error } = await supabase
+          .from('course_announcements')
+          .select(`
+            *,
+            profiles!created_by (
+              full_name,
+              avatar_url
+            )
+          `)
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.warn('Error fetching announcements with instructor info, trying without:', error);
+          
+          // Fallback to basic announcement data if the join fails
+          const { data: basicData, error: basicError } = await supabase
+            .from('course_announcements')
+            .select('*')
+            .eq('course_id', courseId)
+            .order('created_at', { ascending: false });
+            
+          if (basicError) {
+            console.error('Error fetching basic announcements:', basicError);
+            throw new Error('Failed to load announcements');
+          }
+          
+          // Add default instructor info if not available
+          return (basicData || []).map(announcement => ({
+            ...announcement,
+            profiles: {
+              full_name: 'Instructor',
+              avatar_url: null
+            }
+          })) as Announcement[];
+        }
+        
+        return (data || []) as Announcement[];
+      } catch (err) {
+        console.error('Unexpected error fetching announcements:', err);
+        toast({
+          title: 'Error',
+          description: 'Could not load announcements. Please try again later.',
+          variant: 'destructive',
+        });
         return [];
       }
-      
-      return data || [];
     },
     enabled: !!courseId,
+    retry: 1, // Retry once if the first attempt fails
   });
   
   // Check if current user is the instructor
@@ -227,19 +274,39 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
     queryFn: async () => {
       if (!course?.id || !user?.id) return false;
       
-      const { data, error } = await supabase.rpc('check_course_admin', {
-        user_id: user.id,
-        course_id_param: course.id
-      });
-      
-      if (error) {
-        console.error('Error checking instructor status:', error);
+      try {
+        // First try to use the RPC function if it exists
+        const { data, error } = await supabase.rpc('check_course_admin', {
+          user_id: user.id,
+          course_id_param: course.id
+        }).single();
+        
+        if (error) {
+          console.warn('Error using check_course_admin RPC, falling back to direct check:', error);
+          // Fallback to direct check if RPC fails
+          const { data: adminData, error: adminError } = await supabase
+            .from('course_admins')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('course_id', course.id)
+            .maybeSingle();
+            
+          if (adminError) {
+            console.error('Error checking admin status directly:', adminError);
+            return false;
+          }
+          
+          return !!adminData;
+        }
+        
+        return data || false;
+      } catch (err) {
+        console.error('Error in instructor check:', err);
         return false;
       }
-      
-      return data || false;
     },
     enabled: !!course?.id && !!user?.id,
+    retry: 1, // Retry once if the first attempt fails
   });
   
   // Check if user is the course instructor or an admin
