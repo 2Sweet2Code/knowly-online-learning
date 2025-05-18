@@ -34,7 +34,8 @@ import { DashboardSettings } from "./components/dashboard/DashboardSettings";
 import './utils/checkCourses';
 import { DashboardUserManagement } from "./components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
-import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
+// Temporarily comment out DashboardQuestions to identify build issues
+// import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
 
 // Configure the QueryClient with safer defaults and proper error handling
 const createQueryClient = () => {
@@ -138,7 +139,8 @@ const App = () => {
                     <Route path=":courseId/*" element={<CourseManagementPage />} />
                   </Route>
                   <Route path="students" element={<DashboardStudents />} />
-                  <Route path="questions" element={<DashboardQuestions />} />
+                  {/* Temporarily comment out DashboardQuestions route */}
+                  {/* <Route path="questions" element={<DashboardQuestions />} /> */}
                   <Route path="settings" element={<DashboardSettings />} />
                   <Route path="user-management" element={<DashboardUserManagement />} />
                   <Route path="content-moderation" element={<DashboardContentModeration />} />

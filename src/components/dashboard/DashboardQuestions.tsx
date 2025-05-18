@@ -146,21 +146,28 @@ export const DashboardQuestions = () => {
       } catch (err) {
         console.error("Error answering question:", err);
         
-        // Fallback to localStorage
-        try {
-          const localQuestions: Question[] = JSON.parse(localStorage.getItem('instructor-questions') || '[]');
-          const updatedQuestions = localQuestions.map((q) =>
-            q.id === questionId
-              ? { ...q, answer, status: 'answered', updated_at: new Date().toISOString() }
-              : q
-          );
-          
-          localStorage.setItem('instructor-questions', JSON.stringify(updatedQuestions));
-          return { id: questionId, answer, status: 'answered' } as Partial<Question>;
-        } catch (localError) {
-          console.error("Error saving answer to localStorage:", localError);
-          throw new Error('Failed to save answer');
+        // Skip localStorage in SSR/SSG environments
+        if (typeof window !== 'undefined') {
+          try {
+            const localQuestions: Question[] = JSON.parse(
+              localStorage.getItem('instructor-questions') || '[]'
+            );
+            const updatedQuestions = localQuestions.map((q) =>
+              q.id === questionId
+                ? { ...q, answer, status: 'answered', updated_at: new Date().toISOString() }
+                : q
+            );
+            
+            localStorage.setItem('instructor-questions', JSON.stringify(updatedQuestions));
+            return { id: questionId, answer, status: 'answered' } as Partial<Question>;
+          } catch (localError) {
+            console.error("Error saving answer to localStorage:", localError);
+            // Continue to throw the original error instead of the localStorage error
+          }
         }
+        
+        // Re-throw the original error if we get here
+        throw err;
       }
     },
     onSuccess: () => {

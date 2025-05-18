@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Course } from '@/types';
-import CourseDetailPage from '@/pages/CourseDetailPage';
+import { CourseDetailPage } from '@/pages/CourseDetailPage';
 import { Header } from './Header';
 import { Footer } from './Footer';
 import { Loader2 } from 'lucide-react';
