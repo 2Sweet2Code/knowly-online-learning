@@ -27,30 +27,73 @@ import { StudentGradesList } from "../components/StudentGradesList";
 import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
 import { CourseComment, getCourseComments, insertCourseComment } from "@/types/course-comments";
 
+// Error Boundary Types
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
 // Error Boundary Component
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode }) {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error) {
-    console.error('Error caught by boundary:', error);
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    // Log the error to an error reporting service
+    console.error('ErrorBoundary caught an error:', error);
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+    // Log the error to an error reporting service
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    
+    // You can also log the error to your error tracking service here
+    // logErrorToService(error, errorInfo);
   }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
 
   render() {
     if (this.state.hasError) {
-      return (
-        <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-start">
-          <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
-          <div>
-            <h3 className="font-medium">Something went wrong</h3>
-            <p className="text-sm">Please refresh the page or try again later.</p>
+      return this.props.fallback || (
+        <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow-md mt-8">
+          <div className="text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+            </div>
+            <h3 className="mt-3 text-lg font-medium text-gray-900">
+              Something went wrong
+            </h3>
+            <div className="mt-2 text-sm text-gray-500">
+              <p>We apologize for the inconvenience. An error occurred while loading this page.</p>
+              {this.state.error && (
+                <details className="mt-2 p-2 bg-gray-50 rounded text-xs overflow-auto max-h-32">
+                  <summary className="cursor-pointer font-medium">Error details</summary>
+                  <pre className="mt-1 whitespace-pre-wrap">
+                    {this.state.error.toString()}
+                  </pre>
+                </details>
+              )}
+            </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                className="inline-flex items-center rounded-md bg-brown px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brown-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brown"
+                onClick={this.handleReset}
+              >
+                Try again
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -320,11 +363,28 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   const [isClassAdmin, setIsClassAdmin] = useState(false);
   const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
   
+  // Check if Supabase client is initialized
+  const isSupabaseInitialized = () => {
+    if (!supabase) {
+      console.error('Supabase client is not initialized');
+      return false;
+    }
+    return true;
+  };
+
   // Simplified admin status check with direct query
   useEffect(() => {
     let isMounted = true;
     
     const checkAdminStatus = async () => {
+      if (!isSupabaseInitialized()) {
+        if (isMounted) {
+          setIsClassAdmin(false);
+          setIsCheckingAdminStatus(false);
+        }
+        return;
+      }
+
       if (!user?.id || !courseId) {
         if (isMounted) setIsClassAdmin(false);
         return;
@@ -340,8 +400,7 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
         if (isMounted) setIsCheckingAdminStatus(true);
         
         // Use a direct query instead of RPC to avoid potential function issues
-        // Using type assertion with a more specific type
-        const { data, error } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        const { data, error } = await supabase
           .from('course_admins')
           .select('id')
           .eq('user_id', user.id)
