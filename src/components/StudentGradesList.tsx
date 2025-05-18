@@ -9,6 +9,14 @@ interface StudentGradesListProps {
   courseId: string;
 }
 
+interface Profile {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  avatar_url?: string | null;
+}
+
 type StudentGrade = {
   id: string;
   user_id: string;
@@ -16,7 +24,7 @@ type StudentGrade = {
   grade: number | null;
   feedback: string | null;
   name: string;
-  email?: string;
+  email?: string | null;
   role: string;
 };
 
@@ -53,66 +61,68 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         return;
       }
       
-      // Get user profiles
+      // Get user profiles with email
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, name, role')
+        .select('id, name, email, role')
         .in('id', userIds);
       
       if (profilesError) {
-        throw profilesError;
+        console.error('Error fetching profiles:', profilesError);
+        throw new Error('Gabim gjatë ngarkimit të profileve');
+      }
+      
+      if (!profiles || profiles.length === 0) {
+        setStudents([]);
+        setLoading(false);
+        return;
       }
       
       // Get existing grades with better error handling
-      let grades = [];
+      let grades: Array<{ id?: string; user_id: string; course_id: string; grade: number | null; feedback: string | null }> = [];
+      
       try {
-        // First check if the table exists
-        const { data: tableExists, error: tableCheckError } = await supabase
-          .rpc('table_exists', { table_name: 'student_grades' });
+        // Try to fetch grades directly
+        const { data: gradesData, error: gradesError } = await supabase
+          .from('student_grades')
+          .select('*')
+          .eq('course_id', courseId);
           
-        if (tableExists) {
-          // Table exists, fetch grades
-          const { data: gradesData, error: gradesError } = await supabase
-            .from('student_grades')
-            .select('*')
-            .eq('course_id', courseId);
-            
-          if (gradesError) {
-            console.error('Error fetching grades:', gradesError);
+        if (gradesError) {
+          // If the error is about the table not existing, continue with empty grades
+          if (gradesError.code === '42P01') { // 42P01 is the code for "table does not exist"
+            console.log('student_grades table does not exist yet, continuing without grades');
           } else {
-            grades = gradesData || [];
+            console.error('Error fetching grades:', gradesError);
           }
         } else {
-          console.log('student_grades table does not exist yet, continuing without grades');
+          grades = gradesData || [];
         }
-      } catch (gradeErr) {
-        // Try to get grades from localStorage as fallback
-        console.log('Using localStorage fallback for grades');
-        const localGrades = localStorage.getItem('student_grades');
-        if (localGrades) {
-          const parsedGrades = JSON.parse(localGrades);
-          grades = parsedGrades.filter(g => g.course_id === courseId);
-        }
+      } catch (err) {
+        console.error('Error accessing student_grades table:', err);
+        // Continue with empty grades if there's an error
       }
       
       // Combine profiles with grades and filter out instructors
-      const typedProfiles = profiles as Array<{ id: string; name?: string; role?: string }>;
-      const studentsWithGrades = typedProfiles
+      const studentsWithGrades = (profiles as Profile[])
         .filter(profile => profile.role !== 'instructor') // Exclude instructors
         .map(profile => {
           const studentGrade = grades.find(g => g.user_id === profile.id);
+          const displayName = profile.name || 
+                           (profile.email ? profile.email.split('@')[0] : null) || 
+                           'Student';
           return {
             id: studentGrade?.id || `temp-${profile.id}`,
             user_id: profile.id,
             course_id: courseId,
-            grade: studentGrade?.grade || null,
-            feedback: studentGrade?.feedback || null,
-            name: profile.name || 'Unknown',
+            grade: studentGrade?.grade ?? null,
+            feedback: studentGrade?.feedback ?? null,
+            name: displayName,
+            email: profile.email || null,
             role: profile.role || 'student'
-          };
+          } as StudentGrade;
         });
       
-      console.log('Filtered students:', studentsWithGrades);
       setStudents(studentsWithGrades);
     } catch (error) {
       console.error('Error fetching students with grades:', error);
@@ -153,13 +163,19 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   
   const handleSaveGrade = async (studentId: string, grade: number | null, feedback: string | null) => {
     setSavingGrades(prev => ({ ...prev, [studentId]: true }));
+    
     try {
+      // Validate grade if provided
+      if (grade !== null && (grade < 0 || grade > 10)) {
+        throw new Error('Nota duhet të jetë midis 0 dhe 10');
+      }
+      
       // Check if this is a new grade or an update
-      const isNew = studentId.startsWith('new-');
-      const userId = isNew ? studentId.replace('new-', '') : students.find(s => s.id === studentId)?.user_id;
+      const isNew = studentId.startsWith('temp-');
+      const userId = isNew ? studentId.replace('temp-', '') : students.find(s => s.id === studentId)?.user_id;
       
       if (!userId) {
-        throw new Error('User ID not found');
+        throw new Error('ID e përdoruesit nuk u gjet');
       }
       
       // Create a grade object with proper types
@@ -168,61 +184,64 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         user_id: userId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
-        updated_by: user?.id || ''
+        updated_by: user?.id || null,
+        updated_at: new Date().toISOString()
       };
       
-      // Use direct database access with proper error handling
+      let error = null;
+      
       if (isNew) {
-        // For new grades, use direct insert
-        const { error } = await supabase
+        // For new grades, use upsert to handle potential race conditions
+        const { error: upsertError } = await supabase
           .from('student_grades')
-          .insert([gradeData])
+          .upsert([gradeData], { onConflict: 'user_id,course_id' })
           .select();
-          
-        if (error) {
-          console.error('Error saving grade:', error);
-          throw error;
-        }
+        error = upsertError;
       } else {
-        // For updates, use direct update
-        const { error } = await supabase
+        // For updates, use update
+        const { error: updateError } = await supabase
           .from('student_grades')
           .update({
             grade: grade !== null ? Number(grade) : null,
             feedback: feedback || null,
-            updated_by: user?.id,
+            updated_by: user?.id || null,
             updated_at: new Date().toISOString()
           })
           .eq('user_id', userId)
-          .eq('course_id', courseId)
-          .select();
-          
-        if (error) {
-          console.error('Error updating grade:', error);
-          throw error;
+          .eq('course_id', courseId);
+        error = updateError;
+      }
+      
+      if (error) {
+        console.error('Error saving grade:', error);
+        // Check if the error is due to the table not existing
+        if (error.code === '42P01') { // 42P01 is the code for "table does not exist"
+          throw new Error('Tabela e notave nuk ekziston ende. Ju lutem kontaktoni administratorin.');
         }
+        throw error;
       }
       
       // Show success message
       toast({
-        title: 'Nota u ruajt me sukses',
-        description: 'Nota dhe feedback-u u ruajtën me sukses.',
+        title: 'Sukses',
+        description: 'Nota u ruajt me sukses.',
         variant: 'default',
       });
       
-      // Refresh data
+      // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId, 'grades'] });
       
       // Refresh the component state
       fetchStudentsWithGrades();
+      
     } catch (error) {
       console.error('Error saving grade:', error);
       
       // Show error message
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë ruajtjes së notës. Ju lutem provoni përsëri.',
+        description: error instanceof Error ? error.message : 'Ndodhi një gabim gjatë ruajtjes së notës. Ju lutem provoni përsëri.',
         variant: 'destructive',
       });
     } finally {
