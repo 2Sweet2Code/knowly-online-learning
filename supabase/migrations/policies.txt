@@ -1,0 +1,243 @@
+announcements
+
+Disable RLS
+
+Create policy
+
+INSERT
+
+
+Combined instructor and admin insert
+Applied to: authenticated role
+
+SELECT
+
+
+Combined view access policy
+Applied to: authenticated role
+
+assignments
+
+Disable RLS
+
+Create policy
+
+SELECT
+
+
+Combined assignments view policy
+Applied to: authenticated role
+
+course_admins
+
+Disable RLS
+
+Create policy
+
+DELETE
+
+
+Combined course_admins delete policy
+Applied to: authenticated role
+
+INSERT
+
+
+Combined course_admins insert policy
+Applied to: authenticated role
+
+SELECT
+
+
+Combined course_admins view policy
+Applied to: authenticated role
+
+course_announcements
+
+Enable RLS
+
+Create policy
+
+Warning:
+Row Level Security is disabled. Your table is publicly readable and writable.
+No policies created yet
+
+course_comments
+
+Disable RLS
+
+Create policy
+
+INSERT
+
+
+Combined comments insert policy
+Applied to: authenticated role
+
+UPDATE
+
+
+Combined comments update policy
+Applied to: authenticated role
+
+SELECT
+
+
+Combined comments view policy
+Applied to: authenticated role
+
+DELETE
+
+
+Students can delete their own comments
+Applied to: public role
+
+course_content
+
+Disable RLS
+
+Create policy
+
+INSERT
+
+
+Enable insert for course instructors
+Applied to: authenticated role
+
+SELECT
+
+
+Enable read access for course members
+Applied to: authenticated role
+
+courses
+
+Disable RLS
+
+Create policy
+
+DELETE
+
+
+Combined courses delete policy
+Applied to: authenticated role
+
+INSERT
+
+
+Combined courses insert policy
+Applied to: authenticated role
+
+UPDATE
+
+
+Combined courses update policy
+Applied to: authenticated role
+
+SELECT
+
+
+Combined courses view policy
+Applied to: authenticated role
+
+enrollments
+
+Disable RLS
+
+Create policy
+
+SELECT
+
+
+Combined enrollments view policy
+Applied to: authenticated role
+
+INSERT
+
+
+Users can enroll themselves in courses
+Applied to: public role
+
+UPDATE
+
+
+Users can update their own enrollments
+Applied to: public role
+
+profiles
+
+Disable RLS
+
+Create policy
+
+INSERT
+
+
+Allow individual user insert access
+Applied to: authenticated role
+
+SELECT
+
+
+Allow individual user select access
+Applied to: authenticated role
+
+UPDATE
+
+
+Allow individual user update access
+Applied to: authenticated role
+
+questions
+
+Disable RLS
+
+Create policy
+
+UPDATE
+
+
+Allow instructor or admin to update course questions
+Applied to: public role
+
+SELECT
+
+
+Allow instructor or admin to view course questions
+Applied to: public role
+
+INSERT
+
+
+Allow students to insert questions for enrolled courses
+Applied to: public role
+
+SELECT
+
+
+Allow students to view their own questions
+Applied to: public role
+
+student_grades
+
+Disable RLS
+
+Create policy
+
+ALL
+
+
+Course admins can manage grades
+Applied to: public role
+
+ALL
+
+
+Instructors can manage grades for their courses
+Applied to: public role
+
+SELECT
+
+
+Students can view their own grades
+Applied to: public role

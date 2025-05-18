@@ -1,0 +1,144 @@
+Database Tables
+announcements
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+title	No description	text	text	
+content	No description	text	text	
+instructor_id	No description	uuid	uuid	
+instructor_name	No description	text	text	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+course_id	No description	uuid	uuid	
+Database Tables
+assignments
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+title	No description	text	text	
+description	No description	text	text	
+due_date	No description	timestamp with time zone	timestamptz	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+Database Tables
+course_admins
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+user_id	No description	uuid	uuid	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+status	Tracks the application status: pending, approved, or rejected.	text	text	
+reason	No description	text	text	
+Database Tables
+course_announcements
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+title	No description	text	text	
+content	No description	text	text	
+is_pinned	No description	boolean	bool	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+created_by	No description	uuid	uuid	
+Database Tables
+course_comments
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+user_id	No description	uuid	uuid	
+content	No description	text	text	
+is_public	No description	boolean	bool	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+user_name	No description	text	text	
+status	No description	text	text	
+Database Tables
+course_content
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+title	No description	text	text	
+description	No description	text	text	
+content_type	No description	text	text	
+content_url	No description	text	text	
+file_path	No description	text	text	
+file_name	No description	text	text	
+file_size	No description	integer	int4	
+file_type	No description	text	text	
+position	No description	integer	int4	
+is_published	No description	boolean	bool	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+created_by	No description	uuid	uuid	
+Database Tables
+courses
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+title	No description	text	text	
+description	No description	text	text	
+image	No description	text	text	
+category	No description	text	text	
+instructor	No description	text	text	
+instructor_id	No description	uuid	uuid	
+students	No description	integer	int4	
+status	No description	text	text	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+price	No description	numeric	numeric	
+isPaid	No description	boolean	bool	
+accessCode	No description	text	text	
+allow_admin_applications	Indicates whether admins can apply to manage this course. Set by the course instructor.	boolean	bool	
+Database Tables
+enrollments
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+user_id	No description	uuid	uuid	
+progress	No description	integer	int4	
+completed	No description	boolean	bool	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+role	No description	text	text	
+Database Tables
+profiles
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+name	No description	text	text	
+role	No description	text	text	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+Database Tables
+questions
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+student_id	No description	uuid	uuid	
+instructor_id	No description	uuid	uuid	
+student_name	No description	text	text	
+question	No description	text	text	
+answer	No description	text	text	
+status	No description	text	text	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
+Database Tables
+student_grades
+New column
+Name	Description	Data Type	Format	
+id	No description	uuid	uuid	
+course_id	No description	uuid	uuid	
+user_id	No description	uuid	uuid	
+grade	No description	numeric	numeric	
+feedback	No description	text	text	
+updated_by	No description	uuid	uuid	
+created_at	No description	timestamp with time zone	timestamptz	
+updated_at	No description	timestamp with time zone	timestamptz	
