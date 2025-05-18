@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Component, ErrorInfo, ReactNode } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "../context/AuthContext";
-import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell } from "lucide-react";
+import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
 import type { PostgrestError } from '@supabase/postgrest-js';
@@ -17,13 +17,46 @@ import { StudentGradesList } from "../components/StudentGradesList";
 import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
 import { CourseComment, getCourseComments, insertCourseComment } from "@/types/course-comments";
 
+// Error Boundary Component
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    console.error('Error caught by boundary:', error);
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 bg-red-50 text-red-700 rounded-lg flex items-start">
+          <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+          <div>
+            <h3 className="font-medium">Something went wrong</h3>
+            <p className="text-sm">Please refresh the page or try again later.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // CourseComment type is now imported from @/types/course-comments
 
 interface CourseDetailPageProps {
   initialCourseData?: Course | null;
 }
 
-const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => {
+const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = {}) => {
   const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'grades' | 'settings'>('stream');
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
@@ -277,50 +310,67 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
   const [isClassAdmin, setIsClassAdmin] = useState(false);
   const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
   
-  // Simplified admin status check
+  // Simplified admin status check with error boundary and cleanup
   useEffect(() => {
-    // Skip if no user or course ID
-    if (!user?.id || !courseId) {
-      setIsClassAdmin(false);
-      return;
-    }
+    const isMounted = { current: true };
     
-    // Skip if already an instructor
-    if (isInstructor) {
-      setIsClassAdmin(true);
-      return;
-    }
-    
-    setIsCheckingAdminStatus(true);
-    
-    // Simple function to check admin status
     const checkAdminStatus = async () => {
       try {
-        // Use RPC with proper type safety
-        const { data, error } = await (supabase as unknown as {
-          rpc: (fn: string, params: { user_id: string; course_id: string }) => 
-            Promise<{ data: boolean; error: { message: string } | null }>
-        }).rpc('check_course_admin', { 
-          user_id: user.id, 
-          course_id: courseId 
-        });
-        
-        if (error) {
-          console.error('Error checking admin status:', error.message);
-          setIsClassAdmin(false);
-        } else {
-          // User is an admin if we found any matching rows
-          setIsClassAdmin(Array.isArray(data) && data.length > 0);
+        // Skip if no user or course ID
+        if (!user?.id || !courseId) {
+          if (isMounted.current) setIsClassAdmin(false);
+          return;
         }
+        
+        // Skip if already an instructor
+        if (isInstructor) {
+          if (isMounted.current) setIsClassAdmin(true);
+          return;
+        }
+        
+        if (isMounted.current) setIsCheckingAdminStatus(true);
+        
+        try {
+          // Use RPC with proper error handling and type safety
+          const { data, error } = await (supabase as unknown as {
+            rpc: (fn: string, params: { user_id: string; course_id: string }) => 
+              Promise<{ data: boolean | boolean[]; error: { message: string } | null }>
+          }).rpc('check_course_admin', { 
+            user_id: user.id, 
+            course_id: courseId 
+          });
+          
+          if (!isMounted.current) return;
+          
+          if (error) {
+            console.error('Error checking admin status:', error.message);
+            if (isMounted.current) setIsClassAdmin(false);
+          } else {
+            // User is an admin if we found any matching rows
+            const isAdmin = Array.isArray(data) ? data.length > 0 : !!data;
+            if (isMounted.current) setIsClassAdmin(isAdmin);
+          }
+        } catch (err) {
+          console.error('Exception in RPC call:', err);
+          if (isMounted.current) setIsClassAdmin(false);
+        }
+        
+        if (isMounted.current) setIsCheckingAdminStatus(false);
       } catch (err) {
-        console.error('Error checking admin status:', err);
-        setIsClassAdmin(false);
-      } finally {
-        setIsCheckingAdminStatus(false);
+        console.error('Unexpected error in checkAdminStatus:', err);
+        if (isMounted.current) {
+          setIsClassAdmin(false);
+          setIsCheckingAdminStatus(false);
+        }
       }
     };
     
     checkAdminStatus();
+    
+    // Cleanup function
+    return () => {
+      isMounted.current = false;
+    };
   }, [user?.id, courseId, isInstructor]);
   // Define isStudent based on user role and admin status
   const isStudent = !!user && !isInstructor && user.role !== 'admin' && !isClassAdmin;
@@ -541,5 +591,12 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
     </div>
   );
 };
+
+// Main component wrapped with ErrorBoundary
+const CourseDetailPage = (props: CourseDetailPageProps) => (
+  <ErrorBoundary>
+    <CourseDetailPageContent {...props} />
+  </ErrorBoundary>
+);
 
 export default CourseDetailPage;
