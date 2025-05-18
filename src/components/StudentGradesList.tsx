@@ -9,15 +9,7 @@ interface StudentGradesListProps {
   courseId: string;
 }
 
-interface Profile {
-  id: string;
-  name?: string | null;
-  email?: string | null;
-  role?: string | null;
-  avatar_url?: string | null;
-}
-
-type StudentGrade = {
+interface StudentGrade {
   id: string;
   user_id: string;
   course_id: string;
@@ -26,7 +18,7 @@ type StudentGrade = {
   name: string;
   email?: string | null;
   role: string;
-};
+}
 
 export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const [students, setStudents] = useState<StudentGrade[]>([]);
@@ -37,229 +29,145 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Function to fetch students and their grades
   const fetchStudentsWithGrades = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Get all enrolled students for this course
+      // Get all enrolled students
       const { data: enrolledStudents, error: enrollmentError } = await supabase
         .from('enrollments')
         .select('user_id')
         .eq('course_id', courseId);
       
-      if (enrollmentError) {
-        throw enrollmentError;
-      }
-      
-      // Extract user IDs
-      const userIds = enrolledStudents.map(enrollment => enrollment.user_id);
-      
-      if (userIds.length === 0) {
+      if (enrollmentError) throw enrollmentError;
+      if (!enrolledStudents?.length) {
         setStudents([]);
         return;
       }
-      
-      // Get user profiles with email
+
+      // Get user profiles
+      const userIds = enrolledStudents.map(e => e.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, name, email, role')
         .in('id', userIds);
       
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        throw new Error('Gabim gjatë ngarkimit të profileve');
-      }
-      
-      if (!profiles || profiles.length === 0) {
+      if (profilesError) throw profilesError;
+      if (!profiles?.length) {
         setStudents([]);
-        setLoading(false);
         return;
       }
-      
-      // Get existing grades with better error handling
-      let grades: Array<{ id?: string; user_id: string; course_id: string; grade: number | null; feedback: string | null }> = [];
-      
-      try {
-        // Try to fetch grades directly
-        const { data: gradesData, error: gradesError } = await supabase
-          .from('student_grades')
-          .select('*')
-          .eq('course_id', courseId);
-          
-        if (gradesError) {
-          // If the error is about the table not existing, continue with empty grades
-          if (gradesError.code === '42P01') { // 42P01 is the code for "table does not exist"
-            console.log('student_grades table does not exist yet, continuing without grades');
-          } else {
-            console.error('Error fetching grades:', gradesError);
-          }
-        } else {
-          grades = gradesData || [];
-        }
-      } catch (err) {
-        console.error('Error accessing student_grades table:', err);
-        // Continue with empty grades if there's an error
+
+      // Get existing grades
+      const { data: grades = [], error: gradesError } = await supabase
+        .from('student_grades')
+        .select('*')
+        .eq('course_id', courseId)
+        .in('user_id', userIds);
+
+      if (gradesError && gradesError.code !== '42P01') { // Ignore "table does not exist" error
+        console.error('Error fetching grades:', gradesError);
       }
-      
-      // Combine profiles with grades and filter out instructors
-      const studentsWithGrades = (profiles as Profile[])
-        .filter(profile => profile.role !== 'instructor') // Exclude instructors
-        .map(profile => {
-          const studentGrade = grades.find(g => g.user_id === profile.id);
-          const displayName = profile.name || 
-                           (profile.email ? profile.email.split('@')[0] : null) || 
-                           'Student';
-          return {
-            id: studentGrade?.id || `temp-${profile.id}`,
-            user_id: profile.id,
-            course_id: courseId,
-            grade: studentGrade?.grade ?? null,
-            feedback: studentGrade?.feedback ?? null,
-            name: displayName,
-            email: profile.email || null,
-            role: profile.role || 'student'
-          } as StudentGrade;
-        });
-      
+
+      // Combine data
+      const studentsWithGrades = profiles.map(profile => {
+        const grade = grades?.find(g => g.user_id === profile.id) || {
+          id: `temp-${profile.id}`,
+          course_id: courseId,
+          user_id: profile.id,
+          grade: null,
+          feedback: null
+        };
+        
+        return {
+          ...grade,
+          name: profile.name || 'Student pa emër',
+          email: profile.email,
+          role: profile.role || 'student'
+        };
+      });
+
       setStudents(studentsWithGrades);
     } catch (error) {
-      console.error('Error fetching students with grades:', error);
-      setError('Gabim gjatë ngarkimit të studentëve dhe notave.');
+      console.error('Error fetching student grades:', error);
+      setError('Gabim gjatë ngarkimit të të dhënave');
     } finally {
       setLoading(false);
     }
   }, [courseId]);
-  
+
   useEffect(() => {
-    if (courseId) {
-      fetchStudentsWithGrades();
-    }
-  }, [courseId, fetchStudentsWithGrades]);
-  
-  const handleGradeChange = (userId: string, value: string) => {
-    // Convert to number or null
-    const numValue = value === '' ? null : Number(value);
-    
-    setStudents(prev => 
-      prev.map(student => 
-        student.user_id === userId 
-          ? { ...student, grade: numValue } 
-          : student
-      )
-    );
-  };
-  
-  const handleFeedbackChange = (userId: string, value: string) => {
-    setStudents(prev => 
-      prev.map(student => 
-        student.user_id === userId 
-          ? { ...student, feedback: value } 
-          : student
-      )
-    );
-  };
-  
+    fetchStudentsWithGrades();
+  }, [fetchStudentsWithGrades]);
+
   const handleSaveGrade = async (studentId: string, grade: number | null, feedback: string | null) => {
+    if (!user) return;
+    
     setSavingGrades(prev => ({ ...prev, [studentId]: true }));
     
     try {
-      // Validate grade if provided
-      if (grade !== null && (grade < 0 || grade > 10)) {
-        throw new Error('Nota duhet të jetë midis 0 dhe 10');
-      }
+      const { error } = await supabase
+        .from('student_grades')
+        .upsert({
+          id: studentId.startsWith('temp-') ? undefined : studentId,
+          user_id: studentId.replace('temp-', ''),
+          course_id: courseId,
+          grade: grade ? Number(grade) : null,
+          feedback
+        }, {
+          onConflict: 'user_id,course_id'
+        });
       
-      // Check if this is a new grade or an update
-      const isNew = studentId.startsWith('temp-');
-      const userId = isNew ? studentId.replace('temp-', '') : students.find(s => s.id === studentId)?.user_id;
+      if (error) throw error;
       
-      if (!userId) {
-        throw new Error('ID e përdoruesit nuk u gjet');
-      }
-      
-      // Create a grade object with proper types
-      const gradeData = {
-        course_id: courseId,
-        user_id: userId,
-        grade: grade !== null ? Number(grade) : null,
-        feedback: feedback || null,
-        updated_by: user?.id || null,
-        updated_at: new Date().toISOString()
-      };
-      
-      let error = null;
-      
-      if (isNew) {
-        // For new grades, use upsert to handle potential race conditions
-        const { error: upsertError } = await supabase
-          .from('student_grades')
-          .upsert([gradeData], { onConflict: 'user_id,course_id' })
-          .select();
-        error = upsertError;
-      } else {
-        // For updates, use update
-        const { error: updateError } = await supabase
-          .from('student_grades')
-          .update({
-            grade: grade !== null ? Number(grade) : null,
-            feedback: feedback || null,
-            updated_by: user?.id || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', userId)
-          .eq('course_id', courseId);
-        error = updateError;
-      }
-      
-      if (error) {
-        console.error('Error saving grade:', error);
-        // Check if the error is due to the table not existing
-        if (error.code === '42P01') { // 42P01 is the code for "table does not exist"
-          throw new Error('Tabela e notave nuk ekziston ende. Ju lutem kontaktoni administratorin.');
-        }
-        throw error;
-      }
-      
-      // Show success message
       toast({
         title: 'Sukses',
         description: 'Nota u ruajt me sukses.',
         variant: 'default',
       });
       
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['enrollments'] });
-      queryClient.invalidateQueries({ queryKey: ['course', courseId, 'grades'] });
-      
-      // Refresh the component state
       fetchStudentsWithGrades();
-      
     } catch (error) {
       console.error('Error saving grade:', error);
-      
-      // Show error message
       toast({
         title: 'Gabim',
-        description: error instanceof Error ? error.message : 'Ndodhi një gabim gjatë ruajtjes së notës. Ju lutem provoni përsëri.',
+        description: 'Ndodhi një gabim gjatë ruajtjes së notës.',
         variant: 'destructive',
       });
     } finally {
       setSavingGrades(prev => ({ ...prev, [studentId]: false }));
     }
   };
-  
-  const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
-  
-  // Render a student grade row
+
+  const handleGradeChange = (userId: string, value: string) => {
+    setStudents(prev => prev.map(student => 
+      student.user_id === userId 
+        ? { ...student, grade: value ? parseFloat(value) : null }
+        : student
+    ));
+  };
+
+  const handleFeedbackChange = (userId: string, value: string) => {
+    setStudents(prev => prev.map(student => 
+      student.user_id === userId 
+        ? { ...student, feedback: value }
+        : student
+    ));
+  };
+
   const renderStudentGrade = (student: StudentGrade) => {
+    const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
+    const isCurrentStudent = student.user_id === user?.id;
     const isSaving = savingGrades[student.id] || false;
-    
+
+    if (!isInstructor && !isCurrentStudent) return null;
+
     return (
       <div key={student.id} className="p-4 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between">
         <div className="flex-1">
           <h3 className="font-medium">{student.name}</h3>
-          <p className="text-sm text-gray-500">{student.role}</p>
+          {isInstructor && <p className="text-sm text-gray-500">{student.role}</p>}
         </div>
         
         {isInstructor ? (
@@ -271,7 +179,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
                 min="0" 
                 max="10" 
                 step="0.1"
-                value={student.grade === null ? '' : student.grade} 
+                value={student.grade ?? ''} 
                 onChange={(e) => handleGradeChange(student.user_id, e.target.value)}
                 className="w-20 p-1 border rounded"
                 disabled={isSaving}
@@ -299,63 +207,77 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
             </div>
           </div>
         ) : (
-          <div>
-            <p><strong>Nota:</strong> {student.grade !== null ? student.grade : 'Nuk është vlerësuar'}</p>
+          <div className="flex flex-col gap-2 mt-2 md:mt-0">
+            <div>
+              <span className="text-sm font-medium">Nota juaj: </span>
+              <span className="text-lg font-semibold">
+                {student.grade !== null ? student.grade.toFixed(1) : 'Nuk ka notë'}
+              </span>
+              {student.grade !== null && <span className="text-sm text-gray-500">/10</span>}
+            </div>
             {student.feedback && (
-              <p><strong>Feedback:</strong> {student.feedback}</p>
+              <div className="mt-1">
+                <span className="text-sm font-medium">Komentet e instruktorit: </span>
+                <p className="text-sm text-gray-700 mt-1 bg-gray-50 p-2 rounded">
+                  {student.feedback}
+                </p>
+              </div>
             )}
           </div>
         )}
       </div>
     );
   };
-  
-  // Add a timeout to prevent infinite loading
-  useEffect(() => {
-    const loadingTimeout = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-        console.log('Loading timeout reached, forcing display of students');
-      }
-    }, 5000); // 5 seconds timeout
-    
-    return () => clearTimeout(loadingTimeout);
-  }, [loading]);
-  
+
+  // Filter students - instructors see all, students see only themselves
+  const filteredStudents = user?.role === 'instructor' || user?.role === 'admin'
+    ? students
+    : students.filter(student => student.user_id === user?.id);
+
+  const currentStudentGrade = students.find(s => s.user_id === user?.id);
+  const hasNoGrades = user?.role === 'student' && (!currentStudentGrade || currentStudentGrade.grade === null);
+
   if (loading) {
     return (
-      <div className="p-4 text-center">
-        Po ngarkohen studentët dhe notat...
-        <div className="mt-2 flex justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-brown" />
-        </div>
+      <div className="p-8 flex justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-brown" />
       </div>
     );
   }
-  
+
   if (error) {
     return (
-      <div className="p-4 text-center text-red-500">
-        {error}
-      </div>
+      <div className="p-4 text-red-600">{error}</div>
     );
   }
-  
-  if (!students.length) {
-    return (
-      <div className="p-4 text-center">
-        Nuk ka studentë të regjistruar në këtë kurs.
-      </div>
-    );
-  }
-  
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold mb-4">Studentët dhe Notat</h2>
-      
-      <div className="border rounded-md overflow-hidden">
-        {students.map(student => renderStudentGrade(student))}
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="p-4 border-b border-gray-200">
+        <h2 className="text-xl font-semibold">
+          {user?.role === 'instructor' || user?.role === 'admin' ? 'Notat e Studentëve' : 'Notat e Mia'}
+        </h2>
       </div>
+      
+      {hasNoGrades ? (
+        <div className="p-6 text-center">
+          <div className="mx-auto w-16 h-16 flex items-center justify-center rounded-full bg-gray-100 mb-4">
+            <svg className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-1">Nuk keni nota akoma</h3>
+          <p className="text-gray-500">Instruktori juaj nuk ka vendosur asnjë notë për ju akoma.</p>
+        </div>
+      ) : filteredStudents.length === 0 ? (
+        <div className="p-4 text-gray-500">
+          Nuk ka studentë të regjistruar në këtë kurs.
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-200">
+          {filteredStudents.map(student => renderStudentGrade(student))}
+        </div>
+      )}
     </div>
   );
 };
