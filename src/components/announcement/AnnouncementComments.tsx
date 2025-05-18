@@ -56,21 +56,33 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   } = useQuery<AnnouncementCommentWithProfile[]>({
     queryKey: ['announcementComments', announcementId],
     queryFn: async (): Promise<AnnouncementCommentWithProfile[]> => {
-      if (!announcementId) return [];
+      console.log('Fetching comments for announcement:', announcementId);
+      if (!announcementId) {
+        console.log('No announcementId provided, returning empty array');
+        return [];
+      }
       
       try {
         // Fetch comments
-        const { data: comments, error: commentsError } = await supabase
+        console.log('Fetching comments from database...');
+        const { data: comments, error: commentsError, count } = await supabase
           .from('announcement_comments')
-          .select('*')
+          .select('*', { count: 'exact' })
           .eq('announcement_id', announcementId)
           .order('created_at', { ascending: true });
 
-        if (commentsError) throw commentsError;
+        if (commentsError) {
+          console.error('Error fetching comments:', commentsError);
+          throw commentsError;
+        }
+        
+        console.log(`Found ${comments?.length || 0} comments for announcement ${announcementId}`);
         if (!comments?.length) return [];
 
         // Get unique user IDs from comments
         const userIds = [...new Set(comments.map(comment => comment.user_id))];
+        console.log('Fetching profiles for users:', userIds);
+        
         if (!userIds.length) return [];
 
         // Fetch user profiles
@@ -79,15 +91,23 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
           .select('id, name, avatar_url')
           .in('id', userIds);
 
-        if (profilesError) throw profilesError;
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError);
+          throw profilesError;
+        }
+        
+        console.log('Fetched profiles:', profiles);
 
         // Combine comments with profile data
-        return comments.map(comment => ({
+        const combined = comments.map(comment => ({
           ...comment,
           profiles: profiles?.find(p => p.id === comment.user_id) || null
         }));
+        
+        console.log('Returning combined comments:', combined);
+        return combined;
       } catch (error) {
-        console.error('Error fetching comments:', error);
+        console.error('Error in queryFn:', error);
         throw error;
       }
     },
@@ -195,6 +215,12 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     );
   }
 
+  // Debug logs
+  console.log('AnnouncementComments - comments:', comments);
+  console.log('AnnouncementComments - isLoading:', isLoading);
+  console.log('AnnouncementComments - isError:', isError);
+  console.log('AnnouncementComments - error:', error);
+  
   // Show empty state
   if (comments.length === 0) {
     return (
