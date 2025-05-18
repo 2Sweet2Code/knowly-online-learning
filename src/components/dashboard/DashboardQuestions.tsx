@@ -1,228 +1,185 @@
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, AlertCircle, MessageSquare } from 'lucide-react';
+import { Loader2, AlertCircle, MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Database } from '@/integrations/supabase/types';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { formatDistanceToNow } from 'date-fns';
+import { enUS as en, sq } from 'date-fns/locale';
 
-type QuestionRow = Database['public']['Tables']['questions']['Row'];
-type QuestionWithCourseTitle = QuestionRow & {
-  courses: { title: string } | null;
+type Profile = {
+  name: string;
+  avatar_url: string | null;
 };
 
-type Question = Omit<QuestionRow, 'instructor_id'> & {
-  course_title: string;
-  question: string; // added question property
-  linked_comment_id?: string | null;
-  status?: string;
+type AnnouncementComment = {
+  id: string;
+  announcement_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string | null;
+  profiles: Profile | null;
+};
+
+type AnnouncementWithComments = {
+  id: string;
+  title: string;
+  content: string;
+  course_id: string;
+  instructor_id: string;
+  created_at: string;
+  updated_at: string | null;
+  profiles: Profile | null;
+  courses: {
+    id: string;
+    title: string;
+  } | null;
+  comments: AnnouncementComment[];
 };
 
 export const DashboardQuestions = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
-  const [answerText, setAnswerText] = useState('');
-  const [isCreatingComment, setIsCreatingComment] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [expandedAnnouncements, setExpandedAnnouncements] = useState<Set<string>>(new Set());
 
-  // Fetch questions
-  const { data: questions = [], isLoading, isError, error } = useQuery<Question[], Error>({
-    queryKey: ['instructorQuestions', user?.id],
+  // Fetch announcements with comments
+  const { 
+    data: announcements = [], 
+    isLoading, 
+    isError, 
+    error, 
+    refetch 
+  } = useQuery<AnnouncementWithComments[]>({
+    queryKey: ['instructorAnnouncementsWithComments', user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
-
-      const { data, error } = await supabase
-        .from('questions')
+      
+      // Fetch announcements
+      const { data: announcementsData, error: announcementsError } = await supabase
+        .from('announcements')
         .select(`
           *,
-          courses (
-            title
-          )
+          profiles (name, avatar_url),
+          courses (id, title)
         `)
-        .eq('instructor_id', user.id)
-        .order('created_at', { ascending: false })
-        .returns<QuestionWithCourseTitle[]>();
+        .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error("Error fetching questions:", error);
-        if (error.code === '42P01') {
-          console.warn("'questions' table not found, returning empty array.");
-          return [];
-        } else {
-          throw error;
-        }
-      }
+      if (announcementsError) throw announcementsError;
+      if (!announcementsData) return [];
       
-      const formattedData: Question[] = data?.map((q) => {
-        const { courses, ...restOfQuestion } = q;
-        return {
-          ...restOfQuestion,
-          course_title: courses?.title || 'Kurs i panjohur'
-        };
-      }) || [];
+      // Fetch comments for each announcement
+      const announcementsWithComments = await Promise.all(
+        announcementsData.map(async (announcement) => {
+          const { data: commentsData, error: commentsError } = await supabase
+            .from('announcement_comments')
+            .select(`
+              *,
+              profiles (name, avatar_url)
+            `)
+            .eq('announcement_id', announcement.id)
+            .order('created_at', { ascending: true });
+          
+          if (commentsError) throw commentsError;
+          
+          return {
+            ...announcement,
+            comments: commentsData?.map(comment => ({
+              ...comment,
+              profiles: comment.profiles as Profile | null
+            })) || []
+          };
+        })
+      );
       
-      return formattedData;
+      return announcementsWithComments;
     },
     enabled: !!user?.id,
     retry: 1,
     retryDelay: 1000
   });
 
-  // Create a class comment from a question
-  const createCommentFromQuestion = async (question: Question) => {
-    if (!user) return;
-    
-    setIsCreatingComment(true);
-    try {
-      // First, ensure the question isn't already converted
-      if (question.status === 'converted_to_comment' && question.linked_comment_id) {
-        // If already converted, just navigate to the comment
-        navigate(`/courses/${question.course_id}/discussion#comment-${question.linked_comment_id}`);
-        return;
+  // Toggle expanded state for an announcement
+  const toggleAnnouncement = (id: string) => {
+    setExpandedAnnouncements(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
       }
-
-      // Create the comment
-      const { data: comment, error: commentError } = await supabase
-        .from('comments')
-        .insert({
-          content: question.question,
-          user_id: question.student_id,
-          course_id: question.course_id,
-          parent_id: null,
-          is_question: true,
-          metadata: {
-            original_question_id: question.id,
-            converted_at: new Date().toISOString(),
-            converted_by: user.id
-          }
-        })
-        .select()
-        .single();
-      
-      if (commentError) throw commentError;
-      
-      // Update the question with the comment ID and mark as converted
-      const { error: updateError } = await supabase
-        .from('questions')
-        .update({ 
-          status: 'converted_to_comment',
-          linked_comment_id: comment.id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', question.id);
-      
-      if (updateError) throw updateError;
-      
-      // Invalidate and refetch
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['instructorQuestions', user.id] }),
-        queryClient.invalidateQueries({ queryKey: ['comments', question.course_id] })
-      ]);
-      
-      toast({
-        title: 'Sukses!',
-        description: 'Pyetja u konvertua në koment të klasës me sukses.',
-      });
-      
-      // Navigate to the course discussion and scroll to the new comment
-      setTimeout(() => {
-        navigate(`/courses/${question.course_id}/discussion#comment-${comment.id}`);
-      }, 500);
-      
-    } catch (error) {
-      console.error('Error converting question to comment:', error);
-      toast({
-        title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë konvertimit të pyetjes në koment.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsCreatingComment(false);
-    }
+      return newSet;
+    });
   };
 
-  // Answer question mutation
-  const answerMutation = useMutation({
-    mutationFn: async ({ questionId, answer }: { questionId: string; answer: string }) => {
-      const updatePayload = {
-        answer,
-        status: 'answered' as const,
-        updated_at: new Date().toISOString()
-      };
-
-      try {
-        const { data, error } = await supabase
-          .from('questions')
-          .update(updatePayload)
-          .eq('id', questionId)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        return data;
-      } catch (err) {
-        console.error("Error answering question:", err);
-        
-        // Skip localStorage in SSR/SSG environments
-        if (typeof window !== 'undefined') {
-          try {
-            const localQuestions: Question[] = JSON.parse(
-              localStorage.getItem('instructor-questions') || '[]'
-            );
-            const updatedQuestions = localQuestions.map((q) =>
-              q.id === questionId
-                ? { ...q, answer, status: 'answered', updated_at: new Date().toISOString() }
-                : q
-            );
-            
-            localStorage.setItem('instructor-questions', JSON.stringify(updatedQuestions));
-            return { id: questionId, answer, status: 'answered' } as Partial<Question>;
-          } catch (localError) {
-            console.error("Error saving answer to localStorage:", localError);
-            // Continue to throw the original error instead of the localStorage error
+  // Add a new comment
+  const addComment = useMutation({
+    mutationFn: async ({ announcementId, content }: { announcementId: string, content: string }) => {
+      if (!user?.id) throw new Error('Duhet të jeni i kyqur për të shtuar koment');
+      
+      const { data, error } = await supabase
+        .from('announcement_comments')
+        .insert([
+          {
+            announcement_id: announcementId,
+            user_id: user.id,
+            content: content.trim()
           }
-        }
+        ])
+        .select('*, profiles (name, avatar_url)')
+        .single();
         
-        // Re-throw the original error if we get here
-        throw err;
-      }
+      if (error) throw error;
+      return data as AnnouncementComment;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['instructorQuestions', user?.id] });
+    onSuccess: (data, { announcementId }) => {
+      // Update the cache to include the new comment
+      queryClient.setQueryData<AnnouncementWithComments[]>(['instructorAnnouncementsWithComments', user?.id], (old) => {
+        if (!old) return [];
+        return old.map(announcement => {
+          if (announcement.id === announcementId) {
+            return {
+              ...announcement,
+              comments: [
+                ...announcement.comments,
+                {
+                  ...data,
+                  profiles: data.profiles as Profile | null
+                }
+              ]
+            };
+          }
+          return announcement;
+        });
+      });
+      
+      setCommentText('');
       toast({
         title: 'Sukses!',
-        description: 'Përgjigja u dërgua me sukses.',
+        description: 'Komenti u shtua me sukses.',
+        variant: 'default',
       });
-      setSelectedQuestion(null);
-      setAnswerText('');
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('Error adding comment:', error);
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë dërgimit të përgjigjes. Ju lutemi provoni përsëri.',
+        description: 'Ndodhi një gabim gjatë shtimit të komentit. Ju lutem provoni përsëri.',
         variant: 'destructive',
       });
-    }
+    },
   });
 
-  const handleAnswerSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Handle comment submission
+  const handleSubmitComment = (announcementId: string) => {
+    if (!commentText.trim()) return;
     
-    if (!selectedQuestion || !answerText.trim()) {
-      toast({
-        title: 'Gabim',
-        description: 'Ju lutemi shkruani një përgjigje para se ta dërgoni.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    answerMutation.mutate({ 
-      questionId: selectedQuestion.id, 
-      answer: answerText.trim() 
+    addComment.mutate({
+      announcementId,
+      content: commentText
     });
   };
 
@@ -230,192 +187,183 @@ export const DashboardQuestions = () => {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-brown" />
-        <span className="ml-2 text-lg">Po ngarkohen pyetjet...</span>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
-        <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
-        <h4 className="text-lg font-semibold text-red-700 mb-2">Gabim gjatë ngarkimit të pyetjeve</h4>
-        <p className="text-red-600 mb-4">
-          {error?.message || "Ndodhi një gabim i papritur. Ju lutemi provoni përsëri më vonë."}
-        </p>
-        <button 
-          className="btn btn-secondary btn-sm"
-          onClick={() => queryClient.refetchQueries({ queryKey: ['instructorQuestions', user?.id] })}
+      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
+        <div className="flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2" />
+          <strong className="font-bold">Gabim! </strong>
+          <span className="block sm:inline">Ndodhi një gabim gjatë ngarkimit të njoftimeve.</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="mt-2 px-4 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
         >
-          Provo Përsëri
+          Provoni përsëri
         </button>
       </div>
     );
   }
 
-  const pendingQuestions = questions.filter((q) => q.status === 'pending');
-  const answeredQuestions = questions.filter((q) => q.status === 'answered');
-
   return (
     <div className="p-6 bg-white rounded-lg shadow-sm">
-      <h3 className="text-2xl font-playfair font-bold mb-6">Pyetjet e Studentëve</h3>
-      
-      {questions.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-gray-600">Nuk ka pyetje të dërguara ende.</p>
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-2xl font-playfair font-bold">Njoftimet dhe Komentet</h3>
+      </div>
+
+      {announcements.length === 0 ? (
+        <div className="text-center py-12">
+          <MessageCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900">Nuk ka njoftime akoma</h3>
+          <p className="mt-1 text-sm text-gray-500">Njoftimet dhe komentet do të shfaqen këtu.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <h4 className="text-xl font-semibold mb-4">Pyetje Pa Përgjigje ({pendingQuestions.length})</h4>
-            
-            {pendingQuestions.length === 0 ? (
-              <p className="text-gray-600">Nuk ka pyetje pa përgjigje.</p>
-            ) : (
-              <div className="space-y-4">
-                {pendingQuestions.map((question) => (
-                  <div 
-                    key={question.id} 
-                    className={`p-4 border rounded-md cursor-pointer transition-all ${
-                      selectedQuestion?.id === question.id 
-                        ? 'border-brown bg-brown/5' 
-                        : 'border-lightGray hover:border-brown/50'
-                    }`}
-                    onClick={() => setSelectedQuestion(question)}
-                  >
-                    <p className="font-semibold">{question.student_name}</p>
-                    <p className="text-sm text-gray-600 mb-2">
-                      Kursi: {question.course_title}
-                    </p>
-                    <p className="mb-2">{question.question}</p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(question.created_at).toLocaleDateString('sq-AL')}
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedQuestion(question);
-                            setAnswerText(question.answer || '');
-                          }}
-                          className="btn btn-primary btn-sm w-full"
+        <div className="space-y-6">
+          {announcements.map((announcement) => {
+            const isExpanded = expandedAnnouncements.has(announcement.id);
+            const locale = document.documentElement.lang === 'sq' ? sq : en;
+            const timeAgo = formatDistanceToNow(new Date(announcement.created_at), {
+              addSuffix: true,
+              locale,
+            });
+
+            return (
+              <div key={announcement.id} className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+                <div className="p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-medium text-gray-900">
+                          {announcement.title}
+                        </h3>
+                        <span className="text-sm text-gray-500">•</span>
+                        <Link
+                          to={`/courses/${announcement.courses?.id}`}
+                          className="text-sm text-brown hover:underline"
                         >
-                          {question.answer ? 'Shiko Përgjigjen' : 'Përgjigju'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            createCommentFromQuestion(question);
-                          }}
-                          className="btn btn-outline btn-sm w-full flex items-center justify-center gap-1"
-                          disabled={isCreatingComment}
-                        >
-                          <MessageSquare className="h-4 w-4" />
-                          {isCreatingComment ? 'Po krijohet...' : 'Konverto në Koment'}
-                        </button>
+                          {announcement.courses?.title || 'Kurs i panjohur'}
+                        </Link>
+                      </div>
+
+                      <div className="mt-1 text-sm text-gray-500">
+                        Postuar nga {announcement.profiles?.name || 'Përdorues i panjohur'} • {timeAgo}
+                      </div>
+
+                      <p className="mt-2 text-gray-700 whitespace-pre-line">
+                        {announcement.content}
+                      </p>
+
+                      <div className="mt-3 flex items-center text-sm text-gray-500">
+                        <MessageCircle className="h-4 w-4 mr-1" />
+                        <span>{announcement.comments.length} {announcement.comments.length === 1 ? 'koment' : 'komente'}</span>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
-          <div>
-            {selectedQuestion ? (
-              <div className="border border-lightGray rounded-md p-4">
-                <h4 className="text-xl font-semibold mb-4">Përgjigju Pyetjes</h4>
-                
-                <div className="mb-4 p-3 bg-gray-50 rounded-md">
-                  <p className="font-semibold">{selectedQuestion.student_name}</p>
-                  <p className="text-sm text-gray-600 mb-2">
-                    Kursi: {selectedQuestion.course_title}
-                  </p>
-                  <p className="mb-2">{selectedQuestion.question}</p>
-                  <p className="text-xs text-gray-500">
-                    {new Date(selectedQuestion.created_at).toLocaleDateString('sq-AL')}
-                  </p>
-                </div>
-                
-                <form onSubmit={handleAnswerSubmit}>
-                  <div className="mb-4">
-                    <label htmlFor="answer" className="block mb-2 font-semibold text-brown">
-                      Përgjigja juaj:
-                    </label>
-                    <textarea
-                      id="answer"
-                      className="w-full px-4 py-3 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown min-h-[150px]"
-                      placeholder="Shkruani përgjigjen tuaj këtu..."
-                      value={answerText}
-                      onChange={(e) => setAnswerText(e.target.value)}
-                      required
-                    />
-                  </div>
-                  
-                  <div className="flex justify-end space-x-3">
+
                     <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setSelectedQuestion(null);
-                        setAnswerText('');
-                      }}
+                      onClick={() => toggleAnnouncement(announcement.id)}
+                      className="ml-4 text-brown hover:text-brown/80 transition-colors"
+                      aria-label={isExpanded ? 'Mbyll komentet' : 'Shfaq komentet'}
                     >
-                      Anulo
-                    </button>
-                    <button
-                      type="submit"
-                      className="btn btn-primary flex items-center justify-center"
-                      disabled={answerMutation.isPending}
-                    >
-                      {answerMutation.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Duke dërguar...
-                        </>
+                      {isExpanded ? (
+                        <ChevronUp className="h-5 w-5" />
                       ) : (
-                        "Dërgo Përgjigjen"
+                        <ChevronDown className="h-5 w-5" />
                       )}
                     </button>
                   </div>
-                </form>
-              </div>
-            ) : (
-              <div className="border border-dashed border-lightGray rounded-md p-6 flex flex-col items-center justify-center h-full">
-                <p className="text-gray-600 mb-2">Zgjidhni një pyetje për t'iu përgjigjur</p>
-                <p className="text-sm text-gray-500">Klikoni në një pyetje nga lista e pyetjeve pa përgjigje</p>
-              </div>
-            )}
-            
-            {answeredQuestions.length > 0 && (
-              <div className="mt-8">
-                <h4 className="text-xl font-semibold mb-4">Pyetje të Përgjigjura së Fundmi</h4>
-                <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                  {answeredQuestions.slice(0, 5).map((question) => (
-                    <div key={question.id} className="p-4 border border-lightGray rounded-md">
-                      <p className="font-semibold">{question.student_name}</p>
-                      <p className="text-sm text-gray-600 mb-2">
-                        Kursi: {question.course_title}
-                      </p>
-                      <p className="mb-2">{question.question}</p>
-                      <div className="p-3 bg-gray-50 rounded-md mb-2">
-                        <p className="text-sm font-medium">Përgjigja juaj:</p>
-                        <p>{question.answer}</p>
+
+                  {/* Comments section */}
+                  {isExpanded && (
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-3">Komentet</h4>
+
+                      {/* Comments list */}
+                      <div className="space-y-4 mb-4">
+                        {announcement.comments.length === 0 ? (
+                          <p className="text-sm text-gray-500 italic">Asnjë koment akoma. Bëhu i pari që komenton!</p>
+                        ) : (
+                          announcement.comments.map((comment) => (
+                            <div key={comment.id} className="flex gap-3">
+                              <div className="flex-shrink-0">
+                                <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                                  {comment.profiles?.name?.charAt(0) || '?'}
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                  <div className="flex justify-between">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {comment.profiles?.name || 'Përdorues i panjohur'}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                      {formatDistanceToNow(new Date(comment.created_at), {
+                                        addSuffix: true,
+                                        locale,
+                                      })}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-sm text-gray-700 whitespace-pre-line">
+                                    {comment.content}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
                       </div>
-                      <p className="text-xs text-gray-500">
-                        Përgjigje më: {new Date(question.updated_at || '').toLocaleDateString('sq-AL')}
-                      </p>
+
+                      {/* Add comment form */}
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="flex gap-3">
+                          <div className="flex-shrink-0">
+                            <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                              {announcement.profiles?.name?.charAt(0) || 'J'}
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex rounded-md shadow-sm">
+                              <input
+                                type="text"
+                                className="focus:ring-brown focus:border-brown block w-full rounded-l-md sm:text-sm border-gray-300"
+                                placeholder="Shto një koment..."
+                                value={commentText}
+                                onChange={(e) => setCommentText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && commentText.trim()) {
+                                    handleSubmitComment(announcement.id);
+                                  }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSubmitComment(announcement.id)}
+                                disabled={!commentText.trim() || addComment.isPending}
+                                className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-brown focus:border-brown"
+                              >
+                                {addComment.isPending ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <span>Dërgo</span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 };
+
+export default DashboardQuestions;

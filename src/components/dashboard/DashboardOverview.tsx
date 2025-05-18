@@ -253,24 +253,33 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
       </div>
       
       {/* Actions */}
-      <div className="flex flex-wrap gap-4 mb-8">
-        <button 
-          onClick={handleCreateCourse}
-          className="flex items-center px-4 py-2 bg-brown text-white rounded-md hover:bg-brown/80 transition-colors"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Krijo Kurs të Ri
-        </button>
-        
-        {courses.length > 0 && (
-          <button 
-            onClick={handleCreateAnnouncement}
-            className="flex items-center px-4 py-2 border border-brown text-brown rounded-md hover:bg-brown/10 transition-colors"
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-playfair font-semibold">Kurset e Mia</h2>
+        <div className="flex gap-4">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              if (onCreateCourseClick) {
+                onCreateCourseClick();
+              } else {
+                console.error('onCreateCourseClick handler is not defined');
+              }
+            }}
+            className="flex items-center gap-2 bg-brown text-white px-4 py-2 rounded-md hover:bg-brown/90 transition-colors"
           >
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="h-5 w-5" />
+            Krijo Kurs të Ri
+          </button>
+          
+          <button
+            onClick={handleCreateAnnouncement}
+            className="flex items-center gap-2 border border-brown text-brown px-4 py-2 rounded-md hover:bg-brown/10 transition-colors"
+            disabled={courses.length === 0}
+          >
+            <Megaphone className="h-5 w-5" />
             Krijo Njoftim
           </button>
-        )}
+        </div>
       </div>
       
       {/* Recent Courses */}
