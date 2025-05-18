@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Link as LinkIcon, File, Video, BookOpen, Download } from 'lucide-react';
+import { FileText, Link as LinkIcon, File, Video, BookOpen, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
 import type { CourseContent } from '@/types/database.types';
 
 const CONTENT_ICONS = {
@@ -17,14 +18,15 @@ const CONTENT_ICONS = {
 export function CourseContentViewer() {
   const { courseId } = useParams<{ courseId: string }>();
   const [content, setContent] = useState<CourseContent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedContent, setSelectedContent] = useState<CourseContent | null>(null);
-
+  const [isLoading, setIsLoading] = useState(true);
+  
   // Fetch course content
   useEffect(() => {
     if (!courseId) return;
 
     const fetchContent = async () => {
+      setIsLoading(true);
       try {
         const { data, error } = await supabase
           .from('course_content')
@@ -34,14 +36,21 @@ export function CourseContentViewer() {
           .order('position', { ascending: true });
 
         if (error) throw error;
-        setContent(data || []);
+        
+        const contentData = data as CourseContent[];
+        setContent(contentData);
         
         // Select first content by default if available
-        if (data && data.length > 0) {
-          setSelectedContent(data[0]);
+        if (contentData.length > 0) {
+          setSelectedContent(contentData[0]);
         }
       } catch (error) {
         console.error('Error fetching course content:', error);
+        toast({
+          title: 'Gabim',
+          description: 'Ndodhi një gabim gjatë ngarkimit të përmbajtjes së kursit.',
+          variant: 'destructive',
+        });
       } finally {
         setIsLoading(false);
       }
@@ -49,25 +58,7 @@ export function CourseContentViewer() {
 
     fetchContent();
   }, [courseId]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
-
-  if (content.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <FileText className="mx-auto h-12 w-12 text-gray-400" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No content available</h3>
-        <p className="mt-1 text-sm text-gray-500">The instructor hasn't added any content yet.</p>
-      </div>
-    );
-  }
-
+  
   const renderContent = () => {
     if (!selectedContent) return null;
 
@@ -75,7 +66,6 @@ export function CourseContentViewer() {
       case 'text':
         return (
           <div className="prose max-w-none">
-            <h1 className="text-2xl font-bold mb-4">{selectedContent.title}</h1>
             <div dangerouslySetInnerHTML={{ __html: selectedContent.content_url || '' }} />
           </div>
         );
@@ -96,7 +86,7 @@ export function CourseContentViewer() {
                 className="inline-flex items-center gap-2"
               >
                 <Download className="h-4 w-4" />
-                Download File
+                Shkarko Skedarin
               </a>
             </Button>
           </div>
@@ -110,13 +100,12 @@ export function CourseContentViewer() {
               <p className="text-gray-600">{selectedContent.description}</p>
             )}
             <div className="aspect-w-16 aspect-h-9">
-              {/* Simple video embed - you might want to enhance this with a proper video player */}
               <video 
                 src={selectedContent.content_url || ''} 
                 controls 
                 className="w-full rounded-lg"
               >
-                Your browser does not support the video tag.
+                Shfletuesi juaj nuk e mbështet etiketën video.
               </video>
             </div>
           </div>
@@ -137,7 +126,7 @@ export function CourseContentViewer() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2"
               >
-                Open Link
+                Hap Lidhjen
               </a>
             </Button>
           </div>
@@ -154,7 +143,7 @@ export function CourseContentViewer() {
             )}
             {selectedContent.content_url && (
               <div className="mt-6">
-                <h3 className="text-lg font-medium mb-2">Assignment Resources</h3>
+                <h3 className="text-lg font-medium mb-2">Burimet e Detyrës</h3>
                 <a 
                   href={selectedContent.content_url} 
                   target="_blank" 
@@ -162,22 +151,22 @@ export function CourseContentViewer() {
                   className="inline-flex items-center text-blue-600 hover:text-blue-800"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Download Assignment File
+                  Shkarko Detyrën
                 </a>
               </div>
             )}
             <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-3">Submit Your Work</h3>
+              <h3 className="text-lg font-medium mb-3">Dërgo Detyrën Tënde</h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Submission</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Përgjigja</label>
                   <textarea 
                     className="w-full border border-gray-300 rounded-md p-2 min-h-[100px]"
-                    placeholder="Type your submission here or paste a link..."
+                    placeholder="Shkruani përgjigjen tuaj këtu ose ngjisni një lidhje..."
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Attach Files</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bashkëngjitni Skedarë</label>
                   <div className="mt-1 flex items-center">
                     <input
                       type="file"
@@ -191,7 +180,7 @@ export function CourseContentViewer() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <Button>Submit Assignment</Button>
+                  <Button>Dërgo Detyrën</Button>
                 </div>
               </div>
             </div>
@@ -201,36 +190,57 @@ export function CourseContentViewer() {
       default:
         return (
           <div className="text-center py-12">
-            <p className="text-gray-500">This content type is not supported.</p>
+            <p className="text-gray-500">Ky lloj përmbajtjeje nuk mbështetet.</p>
           </div>
         );
     }
   };
+  
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-2" />
+        <p className="text-gray-600">Duke ngarkuar përmbajtjen...</p>
+      </div>
+    );
+  }
+  
+  if (content.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <FileText className="mx-auto h-12 w-12 text-gray-400" />
+        <h3 className="mt-2 text-sm font-medium text-gray-900">Nuk ka përmbajtje të disponueshme</h3>
+        <p className="mt-1 text-sm text-gray-500">Instruktori nuk ka shtuar ende asnjë përmbajtje.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-      {/* Sidebar */}
-      <div className="lg:col-span-1">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Course Content</CardTitle>
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      {/* Sidebar with content list */}
+      <div className="md:col-span-1">
+        <Card className="border border-gray-200 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-semibold">Përmbajtja</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
+          <CardContent className="p-2">
+            <div className="space-y-1 max-h-[calc(100vh-300px)] overflow-y-auto">
               {content.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setSelectedContent(item)}
-                  className={`w-full text-left p-3 rounded-md flex items-start space-x-2 transition-colors ${
+                  className={`w-full text-left px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
                     selectedContent?.id === item.id
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'hover:bg-gray-50'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                      : 'text-gray-700 hover:bg-gray-50 border border-transparent'
                   }`}
                 >
-                  <span className="mt-0.5">
-                    {CONTENT_ICONS[item.content_type as keyof typeof CONTENT_ICONS] || <FileText className="h-4 w-4" />}
-                  </span>
-                  <span className="text-sm font-medium">{item.title}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-500">
+                      {CONTENT_ICONS[item.content_type as keyof typeof CONTENT_ICONS] || <FileText className="h-4 w-4" />}
+                    </span>
+                    <span className="text-left">{item.title}</span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -238,15 +248,26 @@ export function CourseContentViewer() {
         </Card>
       </div>
 
-      {/* Main Content */}
-      <div className="lg:col-span-3">
-        <Card>
+      {/* Main content area */}
+      <div className="md:col-span-3">
+        <Card className="border border-gray-200 shadow-sm">
           <CardContent className="p-6">
             {selectedContent ? (
-              renderContent()
+              <div className="prose max-w-none">
+                <h1 className="text-2xl font-bold mb-6 text-gray-800">
+                  {selectedContent.title}
+                </h1>
+                {selectedContent.description && (
+                  <p className="text-gray-600 mb-6">{selectedContent.description}</p>
+                )}
+                {renderContent()}
+                <div className="mt-8 pt-6 border-t border-gray-100 text-sm text-gray-500">
+                  <p>Përditësuar më: {new Date(selectedContent.updated_at).toLocaleDateString('sq-AL')}</p>
+                </div>
+              </div>
             ) : (
               <div className="text-center py-12">
-                <p className="text-gray-500">Select an item to view its content.</p>
+                <p className="text-gray-500">Zgjidhni një përmbajtje për ta parë</p>
               </div>
             )}
           </CardContent>

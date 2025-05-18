@@ -3,11 +3,13 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
+import { CourseContentViewer } from "@/components/course/CourseContentViewer";
+import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle, PlusCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
 import type { PostgrestError } from '@supabase/postgrest-js';
 import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
 import { Course } from "@/types";
 import type { Database } from '@/types/database.types';
 import { Header } from "../components/Header";
@@ -143,7 +145,7 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
   const [adminCheckError, setAdminCheckError] = useState<PostgrestError | null>(null);
 
-  // Fetch course details (use initialCourseData if provided)
+  // Fetch course details with instructor info
   const { data: course, isLoading: queryLoading, error: queryError } = useQuery({
     initialData: initialCourseData || undefined,
     queryKey: ['course', courseId],
@@ -152,7 +154,14 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
       
       const { data, error } = await supabase
         .from('courses')
-        .select('*')
+        .select(`
+          *,
+          profiles!instructor_id (
+            id,
+            full_name,
+            avatar_url
+          )
+        `)
         .eq('id', courseId)
         .single();
       
@@ -168,8 +177,9 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
         description: data.description,
         image: data.image,
         category: data.category,
-        instructor: data.instructor,
+        instructor: data.profiles?.full_name || 'Instructor',
         instructorId: data.instructor_id,
+        instructorAvatar: data.profiles?.avatar_url,
         students: data.students || 0,
         status: data.status,
         price: data.price,
@@ -182,6 +192,61 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
     enabled: !!courseId,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+  
+  // Fetch announcements for this course
+  const { data: announcements = [] } = useQuery({
+    queryKey: ['announcements', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      const { data, error } = await supabase
+        .from('announcements')
+        .select(`
+          *,
+          profiles!instructor_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching announcements:', error);
+        return [];
+      }
+      
+      return data || [];
+    },
+    enabled: !!courseId,
+  });
+  
+  // Check if current user is the instructor
+  const { data: isUserInstructor } = useQuery({
+    queryKey: ['isInstructor', course?.id, user?.id],
+    queryFn: async () => {
+      if (!course?.id || !user?.id) return false;
+      
+      const { data, error } = await supabase.rpc('check_course_admin', {
+        user_id: user.id,
+        course_id_param: course.id
+      });
+      
+      if (error) {
+        console.error('Error checking instructor status:', error);
+        return false;
+      }
+      
+      return data || false;
+    },
+    enabled: !!course?.id && !!user?.id,
+  });
+  
+  // Check if user is the course instructor or an admin
+  const isUserCourseInstructor = user?.id === course?.instructor_id || user?.role === 'admin';
+  
+  // Combine all instructor checks
+  const isInstructor = isUserInstructor || isClassAdmin || isUserCourseInstructor;
 
   // Always call useEffect, but only run logic if no error
   useEffect(() => {
@@ -380,8 +445,6 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   const courseCode = codeMatch ? codeMatch[1] : null;
   const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
-  const isInstructor = user?.id === course?.instructorId || user?.role === 'admin';
-
   // Check if Supabase client is initialized
   const isSupabaseInitialized = () => {
     if (!supabase) {
@@ -534,19 +597,63 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
               courseId={courseId}
             />
             {/* Announcements list */}
-            <div className="space-y-4 mb-8">
-              {/* We'll fetch announcements from the database in the future */}
-              <div className="bg-white rounded shadow px-4 py-3 text-center text-gray-500">
-                <p>Nuk ka njoftime për këtë kurs aktualisht.</p>
-                {(isInstructor || isClassAdmin) && (
-                  <button 
+            <div className="mt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Njoftime</h2>
+                {isInstructor && (
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleOpenAnnouncementModal}
-                    className="text-brown hover:text-gold text-sm mt-2"
+                    className="flex items-center gap-2"
                   >
-                    + Shto një njoftim të ri
-                  </button>
+                    <PlusCircle className="h-4 w-4" />
+                    Shto Njoftim
+                  </Button>
                 )}
               </div>
+              
+              {announcements.length === 0 ? (
+                <div className="text-center py-8 border rounded-lg">
+                  <p className="text-gray-500">Nuk ka njoftime akoma.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {announcements.map((announcement) => (
+                    <div key={announcement.id} className="border rounded-lg p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0">
+                          {announcement.profiles?.avatar_url ? (
+                            <img 
+                              src={announcement.profiles.avatar_url} 
+                              alt={announcement.profiles.full_name}
+                              className="h-10 w-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                              <User className="h-5 w-5 text-gray-500" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-semibold">{announcement.title}</h3>
+                            <span className="text-xs text-gray-500">
+                              {new Date(announcement.created_at).toLocaleDateString('sq-AL')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700 mt-1">
+                            {announcement.content}
+                          </p>
+                          <div className="mt-2 text-xs text-gray-500">
+                            Postuar nga {announcement.profiles?.full_name || 'Instructor'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             {/* Comments section */}
             <div className="mb-6">
@@ -636,8 +743,28 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
         {tab === 'content' && (
           <section>
             <h3 className="text-2xl font-bold font-playfair mb-6">Përmbajtja e Kursit</h3>
-            {/* Add your course content component here */}
-            <div className="bg-white rounded shadow px-4 py-6 text-gray-500 text-center">(Përmbajtja do të shtohet këtu)</div>
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <CourseContentViewer />
+              {isInstructor && (
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // TODO: Implement add content modal
+                      toast({
+                        title: "Funksionaliteti në zhvillim",
+                        description: "Shtimi i përmbajtjes së re do të jetë i disponueshëm së shpejti.",
+                      });
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    Shto Përmbajtje të Re
+                  </Button>
+                </div>
+              )}
+            </div>
           </section>
         )}
         {/* Students Tab */}
