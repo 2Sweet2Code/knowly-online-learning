@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { AnnouncementModal } from '../dashboard/AnnouncementModal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnnouncementComments } from '../announcement/AnnouncementComments';
 import type { AnnouncementComment } from '@/types/database.types';
 
