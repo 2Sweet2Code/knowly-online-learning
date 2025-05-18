@@ -1,28 +1,30 @@
 import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, MessageSquare } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Database } from '@/integrations/supabase/types';
+import { useNavigate } from 'react-router-dom';
 
-// Define type alias for Question Row
 type QuestionRow = Database['public']['Tables']['questions']['Row'];
-// Define type for the joined data
 type QuestionWithCourseTitle = QuestionRow & {
-  courses: { title: string } | null; // Allow courses to be null
+  courses: { title: string } | null;
 };
-// Define the final Question type used in the component state and UI
-type Question = Omit<QuestionRow, 'instructor_id'> & { // Omit instructor_id if not directly used
+
+type Question = Omit<QuestionRow, 'instructor_id'> & {
   course_title: string;
+  question: string; // added question property
 };
 
 export const DashboardQuestions = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null);
   const [answerText, setAnswerText] = useState('');
+  const [isCreatingComment, setIsCreatingComment] = useState(false);
 
   // Fetch questions
   const { data: questions = [], isLoading, isError, error } = useQuery<Question[], Error>({
@@ -67,15 +69,67 @@ export const DashboardQuestions = () => {
     retryDelay: 1000
   });
 
+  // Create a comment from a question
+  const createCommentFromQuestion = async (question: Question) => {
+    if (!user) return;
+    
+    setIsCreatingComment(true);
+    try {
+      // First create the comment
+      const { data: comment, error: commentError } = await supabase
+        .from('comments')
+        .insert({
+          content: question.question,
+          user_id: question.student_id,
+          course_id: question.course_id,
+          parent_id: null,
+          is_question: true
+        })
+        .select()
+        .single();
+      
+      if (commentError) throw commentError;
+      
+      // Then update the question with the comment ID
+      const { error: updateError } = await supabase
+        .from('questions')
+        .update({ 
+          status: 'converted_to_comment',
+          linked_comment_id: comment.id 
+        })
+        .eq('id', question.id);
+      
+      if (updateError) throw updateError;
+      
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['instructorQuestions', user.id] });
+      
+      toast({
+        title: 'Sukses!',
+        description: 'Pyetja u konvertua në koment me sukses.',
+      });
+      
+      // Navigate to the course discussion
+      navigate(`/courses/${question.course_id}/discussion`);
+      
+    } catch (error) {
+      console.error('Error converting question to comment:', error);
+      toast({
+        title: 'Gabim',
+        description: 'Ndodhi një gabim gjatë konvertimit të pyetjes në koment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreatingComment(false);
+    }
+  };
+
   // Answer question mutation
   const answerMutation = useMutation({
     mutationFn: async ({ questionId, answer }: { questionId: string; answer: string }) => {
-      // Type for the update payload
-      type QuestionUpdate = Database['public']['Tables']['questions']['Update'];
-
-      const updatePayload: QuestionUpdate = {
+      const updatePayload = {
         answer,
-        status: 'answered',
+        status: 'answered' as const,
         updated_at: new Date().toISOString()
       };
 
@@ -87,29 +141,24 @@ export const DashboardQuestions = () => {
           .select()
           .single();
         
-        if (error) {
-          console.error("Error answering question:", error);
-          throw error;
-        }
-        
+        if (error) throw error;
         return data;
       } catch (err) {
-        console.error("Exception answering question:", err);
+        console.error("Error answering question:", err);
         
         // Fallback to localStorage
         try {
           const localQuestions: Question[] = JSON.parse(localStorage.getItem('instructor-questions') || '[]');
           const updatedQuestions = localQuestions.map((q) =>
             q.id === questionId
-              ? { ...q, answer, status: 'answered', updated_at: new Date().toISOString() } as Question
+              ? { ...q, answer, status: 'answered', updated_at: new Date().toISOString() }
               : q
           );
           
           localStorage.setItem('instructor-questions', JSON.stringify(updatedQuestions));
-          
           return { id: questionId, answer, status: 'answered' } as Partial<Question>;
         } catch (localError) {
-          console.error("Error saving answer to localStorage:", localError)
+          console.error("Error saving answer to localStorage:", localError);
           throw new Error('Failed to save answer');
         }
       }
@@ -161,19 +210,19 @@ export const DashboardQuestions = () => {
 
   if (isError) {
     return (
-       <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
-         <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
-         <h4 className="text-lg font-semibold text-red-700 mb-2">Gabim gjatë ngarkimit të pyetjeve</h4>
-         <p className="text-red-600 mb-4">
-           {error?.message || "Ndodhi një gabim i papritur. Ju lutemi provoni përsëri më vonë."}
-         </p>
-         <button 
-           className="btn btn-secondary btn-sm"
-           onClick={() => queryClient.refetchQueries({ queryKey: ['instructorQuestions', user?.id] })}
-         >
-           Provo Përsëri
-         </button>
-       </div>
+      <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
+        <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
+        <h4 className="text-lg font-semibold text-red-700 mb-2">Gabim gjatë ngarkimit të pyetjeve</h4>
+        <p className="text-red-600 mb-4">
+          {error?.message || "Ndodhi një gabim i papritur. Ju lutemi provoni përsëri më vonë."}
+        </p>
+        <button 
+          className="btn btn-secondary btn-sm"
+          onClick={() => queryClient.refetchQueries({ queryKey: ['instructorQuestions', user?.id] })}
+        >
+          Provo Përsëri
+        </button>
+      </div>
     );
   }
 
@@ -215,6 +264,33 @@ export const DashboardQuestions = () => {
                     <p className="text-xs text-gray-500">
                       {new Date(question.created_at).toLocaleDateString('sq-AL')}
                     </p>
+                    <div className="mt-3 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedQuestion(question);
+                            setAnswerText(question.answer || '');
+                          }}
+                          className="btn btn-primary btn-sm w-full"
+                        >
+                          {question.answer ? 'Shiko Përgjigjen' : 'Përgjigju'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            createCommentFromQuestion(question);
+                          }}
+                          className="btn btn-outline btn-sm w-full flex items-center justify-center gap-1"
+                          disabled={isCreatingComment}
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          {isCreatingComment ? 'Po krijohet...' : 'Konverto në Koment'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

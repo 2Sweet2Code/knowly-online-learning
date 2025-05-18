@@ -99,21 +99,24 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         }
       }
       
-      // Combine profiles with grades using type assertion to handle potential type issues
+      // Combine profiles with grades and filter out instructors
       const typedProfiles = profiles as Array<{ id: string; name?: string; role?: string }>;
-      const studentsWithGrades = typedProfiles.map(profile => {
-        const studentGrade = grades.find(g => g.user_id === profile.id);
-        return {
-          id: studentGrade?.id || `temp-${profile.id}`,
-          user_id: profile.id,
-          course_id: courseId,
-          grade: studentGrade?.grade || null,
-          feedback: studentGrade?.feedback || null,
-          name: profile.name || 'Unknown',
-          role: profile.role || 'student'
-        };
-      });
+      const studentsWithGrades = typedProfiles
+        .filter(profile => profile.role !== 'instructor') // Exclude instructors
+        .map(profile => {
+          const studentGrade = grades.find(g => g.user_id === profile.id);
+          return {
+            id: studentGrade?.id || `temp-${profile.id}`,
+            user_id: profile.id,
+            course_id: courseId,
+            grade: studentGrade?.grade || null,
+            feedback: studentGrade?.feedback || null,
+            name: profile.name || 'Unknown',
+            role: profile.role || 'student'
+          };
+        });
       
+      console.log('Filtered students:', studentsWithGrades);
       setStudents(studentsWithGrades);
     } catch (error) {
       console.error('Error fetching students with grades:', error);
