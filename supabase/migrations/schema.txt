@@ -142,3 +142,39 @@ feedback	No description	text	text
 updated_by	No description	uuid	uuid	
 created_at	No description	timestamp with time zone	timestamptz	
 updated_at	No description	timestamp with time zone	timestamptz	
+Database Tables
+announcement_comments
+Filter columns
+
+New column
+Name	Description	Data Type	Format	
+id
+
+No description
+
+uuid	uuid	
+announcement_id
+
+No description
+
+uuid	uuid	
+user_id
+
+No description
+
+uuid	uuid	
+content
+
+No description
+
+text	text	
+created_at
+
+No description
+
+timestamp with time zone	timestamptz	
+updated_at
+
+No description
+
+timestamp with time zone	timestamptz	

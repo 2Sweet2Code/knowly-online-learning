@@ -125,31 +125,62 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   // Handle comment submission
   const { mutate: submitComment, isPending: isSubmitting } = useMutation({
     mutationFn: async (content: string) => {
-      if (!user || !announcementId) return;
+      console.log('Submitting comment...', { 
+        user: user?.id, 
+        announcementId,
+        content: content.trim() 
+      });
       
-      const { data, error } = await supabase
-        .from('announcement_comments')
-        .insert([
-          {
-            announcement_id: announcementId,
-            user_id: user.id,
-            content: content.trim()
-          }
-        ])
-        .select();
+      if (!user) {
+        console.error('No user found');
+        throw new Error('User not authenticated');
+      }
       
-      if (error) throw error;
-      return data?.[0];
+      if (!announcementId) {
+        console.error('No announcement ID provided');
+        throw new Error('No announcement ID');
+      }
+      
+      try {
+        const { data, error, status, statusText } = await supabase
+          .from('announcement_comments')
+          .insert([
+            {
+              announcement_id: announcementId,
+              user_id: user.id,
+              content: content.trim()
+            }
+          ])
+          .select();
+        
+        console.log('Comment submission response:', { 
+          data, 
+          error, 
+          status, 
+          statusText 
+        });
+        
+        if (error) {
+          console.error('Supabase error:', error);
+          throw error;
+        }
+        
+        return data?.[0];
+      } catch (err) {
+        console.error('Error in mutationFn:', err);
+        throw err;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('Comment submitted successfully:', data);
       setCommentText('');
       queryClient.invalidateQueries({ queryKey: ['announcementComments', announcementId] });
     },
     onError: (error) => {
-      console.error('Error submitting comment:', error);
+      console.error('Error in onError:', error);
       toast({
         title: 'Error',
-        description: 'Failed to post comment. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to post comment. Please try again.',
         variant: 'destructive',
       });
     }
@@ -221,109 +252,110 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   console.log('AnnouncementComments - isError:', isError);
   console.log('AnnouncementComments - error:', error);
   
-  // Show empty state
-  if (comments.length === 0) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-4 text-sm text-muted-foreground">
-          {t('comments.noComments', 'No comments yet. Be the first to comment!')}
-        </div>
-        
-        <form onSubmit={handleSubmitComment} className="mt-4">
-          <div className="flex items-end gap-2">
-            <Textarea
-              placeholder={t('comments.placeholder', 'Write a comment...')}
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              className="min-h-[80px] flex-1"
-              disabled={isSubmitting}
-            />
-            <Button 
-              type="submit" 
-              size="sm" 
-              className="self-end"
-              disabled={!commentText.trim() || isSubmitting}
-            >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </form>
-      </div>
-    );
-  }
+  // Toggle comments section
+  const toggleComments = () => {
+    setIsExpanded(!isExpanded);
+  };
 
-  // Show comments list with form
+  // Show comments toggle button
   return (
-    <div className="space-y-4">
-      <div className="space-y-4">
-        {comments.map((comment) => (
-          <div key={comment.id} className="flex gap-3 group">
-            <Avatar className="h-10 w-10 flex-shrink-0">
-              <AvatarImage 
-                src={comment.profiles?.avatar_url || ''} 
-                alt={comment.profiles?.name || ''} 
-              />
-              <AvatarFallback>
-                {comment.profiles?.name?.[0]?.toUpperCase() || 'U'}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <div className="bg-muted/50 rounded-lg p-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="font-medium text-sm">
-                      {comment.profiles?.name || t('common.anonymous', 'Anonymous')}
-                    </span>
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                    </span>
-                  </div>
-                  {user?.id === comment.user_id && (
-                    <button
-                      onClick={() => handleDeleteComment(comment.id)}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-                      aria-label={t('common.delete', 'Delete')}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">
-                  {comment.content}
-                </p>
-              </div>
+    <div className="mt-4">
+      <button
+        onClick={toggleComments}
+        className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {isExpanded ? (
+          <>
+            <span>Hide comments</span>
+            <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </>
+        ) : (
+          <>
+            <span>Show comments</span>
+            <svg className="w-4 h-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </>
+        )}
+      </button>
+
+      {isExpanded && (
+        <div className="mt-2 space-y-4">
+          {comments.length === 0 ? (
+            <div className="text-center py-4 text-sm text-muted-foreground">
+              {t('comments.noComments', 'No comments yet. Be the first to comment!')}
             </div>
-          </div>
-        ))}
-      </div>
-      
-      <form onSubmit={handleSubmitComment} className="mt-4">
-        <div className="flex items-end gap-2">
-          <Textarea
-            placeholder={t('comments.placeholder', 'Write a comment...')}
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            className="min-h-[80px] flex-1"
-            disabled={isSubmitting}
-          />
-          <Button 
-            type="submit" 
-            size="sm" 
-            className="self-end"
-            disabled={!commentText.trim() || isSubmitting}
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+          ) : (
+            <div className="space-y-4">
+              {comments.map((comment) => (
+                <div key={comment.id} className="flex gap-3 group">
+                  <Avatar className="h-10 w-10 flex-shrink-0">
+                    <AvatarImage 
+                      src={comment.profiles?.avatar_url || ''} 
+                      alt={comment.profiles?.name || ''} 
+                    />
+                    <AvatarFallback>
+                      {comment.profiles?.name?.[0]?.toUpperCase() || 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <div className="bg-muted/50 rounded-lg p-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="font-medium text-sm">
+                            {comment.profiles?.name || t('common.anonymous', 'Anonymous')}
+                          </span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                          </span>
+                        </div>
+                        {user?.id === comment.user_id && (
+                          <button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+                            aria-label={t('common.delete', 'Delete')}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">
+                        {comment.content}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitComment} className="mt-4">
+            <div className="flex items-end gap-2">
+              <Textarea
+                placeholder={t('comments.placeholder', 'Write a comment...')}
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                className="min-h-[80px] flex-1"
+                disabled={isSubmitting}
+              />
+              <Button 
+                type="submit" 
+                size="sm" 
+                className="self-end"
+                disabled={!commentText.trim() || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </form>
         </div>
-      </form>
+      )}
     </div>
   );
-};
+}
