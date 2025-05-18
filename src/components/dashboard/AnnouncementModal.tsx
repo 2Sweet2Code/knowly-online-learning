@@ -110,18 +110,7 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!user) {
-      toast({
-        title: 'Gabim',
-        description: 'Ju duhet të jeni të kyçur për të publikuar një njoftim.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     if (!selectedCourseId && courses.length > 0) {
       setErrors(prev => ({
@@ -131,46 +120,48 @@ export const AnnouncementModal = ({ isOpen, onClose, courseId }: AnnouncementMod
       return;
     }
 
+    if (!user?.id) {
+      toast({
+        title: 'Gabim',
+        description: 'Nuk jeni i kyqur si përdorues.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Create announcement data object
-      const announcementData = {
-        title: title.trim(),
-        content: content.trim(),
-        instructor_id: user.id,
-        created_at: new Date().toISOString(),
-        course_id: selectedCourseId,
-        instructor_name: user.name || 'Instructor'
-      };
-
-      const { data, error } = await supabase
-        .from('announcements')
-        .insert(announcementData)
-        .select()
-        .single();
+      const { error } = await supabase
+        .from('course_announcements')
+        .insert([
+          {
+            title: title.trim(),
+            content: content.trim(),
+            course_id: selectedCourseId,
+            created_by: user.id,
+            is_pinned: false
+          }
+        ]);
 
       if (error) throw error;
 
-      // Invalidate queries to refresh the list
-      queryClient.invalidateQueries({ queryKey: ['instructorAnnouncements'] });
-      if (selectedCourseId) {
-        queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', selectedCourseId] });
-      }
-
-      // Close the modal
-      onClose();
+      // Invalidate the announcements query to refetch the list
+      queryClient.invalidateQueries({ queryKey: ['courseAnnouncements', selectedCourseId] });
+      queryClient.invalidateQueries({ queryKey: ['recentAnnouncements'] });
 
       toast({
         title: 'Sukses',
-        description: 'Njoftimi u publikua me sukses!',
+        description: 'Njoftimi u shtua me sukses!',
       });
 
+      // Close the modal
+      onClose();
     } catch (error) {
       console.error('Error creating announcement:', error);
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë publikimit të njoftimit. Ju lutem provoni përsëri më vonë.',
+        description: 'Ndodhi një gabim gjatë krijimit të njoftimit.',
         variant: 'destructive',
       });
     } finally {

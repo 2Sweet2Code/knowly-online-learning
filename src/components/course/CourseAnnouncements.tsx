@@ -9,13 +9,27 @@ import { useAuth } from '@/context/AuthContext';
 import { AnnouncementModal } from '../dashboard/AnnouncementModal';
 import { useState, useEffect } from 'react';
 
+type Profile = {
+  name: string;
+} | null;
+
+type DatabaseAnnouncement = {
+  id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  course_id: string;
+  profiles: Profile;
+};
+
 interface Announcement {
   id: string;
   title: string;
   content: string;
   created_at: string;
-  instructor_name: string;
   course_id: string;
+  created_by: string;
+  instructor_name: string;
 }
 
 interface CourseAnnouncementsProps {
@@ -31,14 +45,49 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
   const fetchAnnouncements = async (): Promise<Announcement[]> => {
     if (!courseId) return [];
     
-    const { data, error } = await supabase
-      .from('announcements')
+    // First, get the announcements
+    const { data: announcements, error: announcementsError } = await supabase
+      .from('course_announcements')
       .select('*')
       .eq('course_id', courseId)
       .order('created_at', { ascending: false });
       
-    if (error) throw error;
-    return data || [];
+    if (announcementsError) {
+      console.error('Error fetching announcements:', announcementsError);
+      throw announcementsError;
+    }
+    
+    if (!announcements || announcements.length === 0) return [];
+    
+    // Get the instructor names
+    const instructorIds = [...new Set(announcements.map(a => a.created_by))];
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', instructorIds);
+      
+    if (profilesError) {
+      console.error('Error fetching instructor profiles:', profilesError);
+      // Continue with just the announcements if we can't get profiles
+      return announcements.map(announcement => ({
+        ...announcement,
+        instructor_name: 'Instructor'
+      }));
+    }
+    
+    // Create a map of instructor IDs to names
+    const instructorMap = new Map(profiles.map(p => [p.id, p.name]));
+    
+    // Map the data to match the Announcement interface
+    return announcements.map(announcement => ({
+      id: announcement.id,
+      title: announcement.title,
+      content: announcement.content,
+      created_at: announcement.created_at,
+      course_id: announcement.course_id,
+      created_by: announcement.created_by,
+      instructor_name: instructorMap.get(announcement.created_by) || 'Instructor'
+    }));
   };
 
   const {
