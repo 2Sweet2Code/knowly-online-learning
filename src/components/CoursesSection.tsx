@@ -10,14 +10,10 @@ const fetchCourses = async (category: string) => {
   try {
     console.log('Fetching courses with category:', category);
     
-    // First, check if we can connect to Supabase
-    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-    
     // Query the courses table
     let query = supabase
       .from('courses')
       .select('*')
-      .eq('status', 'active')
       .order('created_at', { ascending: false });
     
     if (category !== 'all') {

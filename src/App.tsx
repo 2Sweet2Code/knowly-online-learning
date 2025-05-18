@@ -29,6 +29,9 @@ import { DashboardCourses } from "./components/dashboard/DashboardCourses";
 import { DashboardStudents } from "./components/dashboard/DashboardStudents";
 import { DashboardAnalytics } from "./components/dashboard/DashboardAnalytics";
 import { DashboardSettings } from "./components/dashboard/DashboardSettings";
+
+// Import debug utility
+import './utils/checkCourses';
 import { DashboardUserManagement } from "./components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
