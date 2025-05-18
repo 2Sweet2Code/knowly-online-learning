@@ -108,11 +108,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 type Announcement = {
   id: string;
   course_id: string;
-  instructor_id: string;
   title: string;
   content: string;
+  is_pinned: boolean;
   created_at: string;
   updated_at?: string;
+  created_by: string;
   profiles?: {
     full_name: string;
     avatar_url: string | null;
@@ -210,7 +211,7 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   
   // Fetch announcements for this course
   const { data: announcements = [] } = useQuery<Announcement[]>({
-    queryKey: ['announcements', courseId],
+    queryKey: ['course_announcements', courseId],
     queryFn: async () => {
       if (!courseId) return [];
       
@@ -250,10 +251,21 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
               full_name: 'Instructor',
               avatar_url: null
             }
-          })) as Announcement[];
+          })) as unknown as Announcement[];
         }
         
-        return (data || []) as Announcement[];
+        // Ensure the data matches the Announcement type
+        return (data || []).map(announcement => ({
+          ...announcement,
+          // Ensure profiles is properly typed
+          profiles: announcement.profiles ? {
+            full_name: announcement.profiles.full_name || 'Instructor',
+            avatar_url: announcement.profiles.avatar_url
+          } : {
+            full_name: 'Instructor',
+            avatar_url: null
+          }
+        })) as unknown as Announcement[];
       } catch (err) {
         console.error('Unexpected error fetching announcements:', err);
         toast({
@@ -704,12 +716,19 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
-                            <h3 className="font-semibold">{announcement.title}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold">{announcement.title}</h3>
+                              {announcement.is_pinned && (
+                                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded">
+                                  Pinned
+                                </span>
+                              )}
+                            </div>
                             <span className="text-xs text-gray-500">
                               {new Date(announcement.created_at).toLocaleDateString('sq-AL')}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-700 mt-1">
+                          <p className="text-sm text-gray-700 mt-1 whitespace-pre-line">
                             {announcement.content}
                           </p>
                           <div className="mt-2 text-xs text-gray-500">

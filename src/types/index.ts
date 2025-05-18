@@ -15,13 +15,13 @@ export interface Course {
   title: string;
   description: string;
   image: string;
-  category: string;
+  category: 'programim' | 'dizajn' | 'marketing' | 'other';
   instructor: string;
   instructorId: string;
   instructor_id?: string; // For database compatibility
   instructorAvatar?: string;
   students: number;
-  status: string;
+  status: 'draft' | 'active' | 'archived';
   price: number;
   isPaid: boolean;
   is_paid?: boolean; // For database compatibility
@@ -29,6 +29,7 @@ export interface Course {
   updated_at: string;
   accessCode?: string;
   access_code?: string; // For database compatibility
+  allow_admin_applications?: boolean;
 }
 
 export interface Enrollment {
