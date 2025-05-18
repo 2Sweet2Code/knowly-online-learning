@@ -28,20 +28,38 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   const { data: comments = [], isLoading, isError, refetch } = useQuery<AnnouncementComment[]>({
     queryKey: ['announcementComments', announcementId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // First, get the comments
+      const { data: commentsData, error: commentsError } = await supabase
         .from('announcement_comments')
-        .select(`
-          *,
-          profiles (
-            name,
-            avatar_url
-          )
-        `)
+        .select('*')
         .eq('announcement_id', announcementId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
-      return data || [];
+      if (commentsError) throw commentsError;
+      if (!commentsData || commentsData.length === 0) return [];
+
+      // Get unique user IDs from comments
+      const userIds = [...new Set(commentsData.map(comment => comment.user_id))];
+      
+      // Get user profiles
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+
+      if (profilesError) throw profilesError;
+
+      // Create a map of user IDs to profiles
+      const profilesMap = new Map(profilesData?.map(profile => [profile.id, {
+        name: profile.name,
+        avatar_url: profile.avatar_url
+      }]));
+
+      // Combine comments with profiles
+      return commentsData.map(comment => ({
+        ...comment,
+        profiles: profilesMap.get(comment.user_id) || null
+      }));
     },
     enabled: isExpanded,
   });
@@ -51,7 +69,8 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     mutationFn: async (content: string) => {
       if (!user?.id) throw new Error('User not authenticated');
       
-      const { data, error } = await supabase
+      // Insert the new comment
+      const { data: commentData, error: commentError } = await supabase
         .from('announcement_comments')
         .insert({
           content, 
@@ -61,8 +80,32 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         .select()
         .single();
       
-      if (error) throw error;
-      return data as AnnouncementComment;
+      if (commentError) throw commentError;
+      
+      // Get the user's profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, avatar_url')
+        .eq('id', user.id)
+        .single();
+      
+      if (profileError) {
+        console.error('Error fetching user profile:', profileError);
+        // Return comment without profile data if we can't fetch it
+        return {
+          ...commentData,
+          profiles: null
+        } as AnnouncementComment;
+      }
+      
+      // Return comment with profile data
+      return {
+        ...commentData,
+        profiles: {
+          name: profileData.name,
+          avatar_url: profileData.avatar_url
+        }
+      } as AnnouncementComment;
     },
     onSuccess: () => {
       setCommentText('');
