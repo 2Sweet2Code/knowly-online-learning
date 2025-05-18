@@ -8,38 +8,61 @@ import { AlertCircle } from "lucide-react";
 
 const fetchCourses = async (category: string) => {
   try {
+    console.log('Fetching courses with category:', category);
+    
+    // First, check if we can connect to Supabase
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL);
+    
     // Query the courses table
-    let query = supabase.from('courses').select('*').eq('status', 'active');
+    let query = supabase
+      .from('courses')
+      .select('*')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
     
     if (category !== 'all') {
       query = query.eq('category', category);
     }
     
-    const { data, error } = await query;
+    console.log('Executing query...');
+    const { data, error, count } = await query;
     
     if (error) {
       console.error("Error fetching public courses:", error);
       throw error;
     }
     
+    console.log(`Fetched ${data?.length || 0} courses`);
+    console.log('Raw courses data:', data);
+    
     if (!data) return [];
 
-    return data.map(course => ({
-      id: course.id,
-      title: course.title,
-      description: course.description,
-      image: course.image,
-      category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
-      instructor: course.instructor,
-      instructorId: course.instructor_id,
-      students: course.students || 0,
-      status: course.status as 'active' | 'draft',
-      price: course.price || 0,
-      isPaid: !!course.isPaid,
-      accessCode: course.accessCode,
-      created_at: course.created_at,
-      updated_at: course.updated_at
-    }));
+    const formattedCourses = data.map(course => {
+      console.log('Processing course:', course.id, course.title);
+      return {
+        id: course.id,
+        title: course.title,
+        description: course.description,
+        image: course.image,
+        category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+        instructor: course.instructor,
+        instructor_id: course.instructor_id,
+        instructorId: course.instructor_id, // For backward compatibility
+        students: course.students || 0,
+        status: course.status as 'active' | 'draft',
+        price: course.price || 0,
+        is_paid: !!course.is_paid,
+        isPaid: !!course.is_paid, // For backward compatibility
+        access_code: course.access_code,
+        accessCode: course.access_code, // For backward compatibility
+        created_at: course.created_at,
+        updated_at: course.updated_at,
+        allow_admin_applications: course.allow_admin_applications
+      };
+    });
+    
+    console.log('Formatted courses:', formattedCourses);
+    return formattedCourses;
   } catch (error) {
     console.error('Error in fetchCourses:', error);
     throw error;
@@ -51,12 +74,14 @@ export const CoursesSection = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const { data: courses = [], isLoading, isError, error } = useQuery<Course[], Error>({
+  const { data: courses = [], isLoading, error } = useQuery<Course[]>({
     queryKey: ['publicCourses', activeFilter],
-    queryFn: () => fetchCourses(activeFilter),
+    queryFn: () => fetchCourses(activeFilter) as Promise<Course[]>,
     staleTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
   });
+  
+  const isError = !!error;
 
   const handleFilterChange = (filter: string) => {
     setActiveFilter(filter);
