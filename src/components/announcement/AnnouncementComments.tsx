@@ -5,19 +5,38 @@ import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { enUS as en, sq } from 'date-fns/locale';
-import { Loader2, MessageSquare, Send, Trash2 } from 'lucide-react';
+import { Loader2, Send, Trash2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
-import type { AnnouncementComment } from '@/types/database.types';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useTranslation } from 'react-i18next';
 
-// Using the AnnouncementComment type from database.types
+interface Profile {
+  id: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
+interface AnnouncementCommentWithProfile {
+  id: string;
+  content: string;
+  announcement_id: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  profiles: {
+    name: string | null;
+    avatar_url: string | null;
+  } | null;
+}
 
 interface AnnouncementCommentsProps {
   announcementId: string;
 }
 
 export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsProps) => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -25,9 +44,9 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Fetch comments for this announcement
-  const { data: comments = [], isLoading, isError, refetch } = useQuery<AnnouncementComment[]>({
+  const { data: comments = [], isLoading, isError, refetch } = useQuery<AnnouncementCommentWithProfile[]>({
     queryKey: ['announcementComments', announcementId],
-    queryFn: async () => {
+    queryFn: async (): Promise<AnnouncementCommentWithProfile[]> => {
       console.log('Fetching comments for announcement:', announcementId);
       
       // First, get the comments
@@ -69,7 +88,7 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
       }]));
 
       // Combine comments with profiles
-      const combinedComments = commentsData.map(comment => ({
+      const combinedComments: AnnouncementCommentWithProfile[] = commentsData.map(comment => ({
         ...comment,
         profiles: profilesMap.get(comment.user_id) || null
       }));
@@ -83,7 +102,7 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   });
 
   // Add new comment mutation
-  const addComment = useMutation({
+  const addComment = useMutation<AnnouncementCommentWithProfile, Error, string>({
     mutationFn: async (content: string) => {
       if (!user?.id) throw new Error('User not authenticated');
       
@@ -96,13 +115,13 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
           content, 
           announcement_id: announcementId,
           user_id: user.id,
-        } as { content: string; announcement_id: string; user_id: string })
-        .select()
+        })
+        .select('*')
         .single();
       
-      if (commentError) {
+      if (commentError || !commentData) {
         console.error('Error adding comment:', commentError);
-        throw commentError;
+        throw commentError || new Error('Failed to add comment');
       }
       
       console.log('Comment added successfully:', commentData);
@@ -114,23 +133,14 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         .eq('id', user.id)
         .single();
       
-      if (profileError) {
-        console.error('Error fetching user profile:', profileError);
-        // Return comment without profile data if we can't fetch it
-        return {
-          ...commentData,
-          profiles: null
-        } as AnnouncementComment;
-      }
-      
-      // Return comment with profile data
-      const commentWithProfile = {
+      // Create the comment with profile data
+      const commentWithProfile: AnnouncementCommentWithProfile = {
         ...commentData,
-        profiles: {
+        profiles: profileData ? {
           name: profileData.name,
           avatar_url: profileData.avatar_url
-        }
-      } as AnnouncementComment;
+        } : null
+      };
       
       console.log('Returning comment with profile:', commentWithProfile);
       return commentWithProfile;
@@ -140,9 +150,9 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
       setCommentText('');
       
       // Update the query data with the new comment
-      queryClient.setQueryData<AnnouncementComment[]>(
+      queryClient.setQueryData<AnnouncementCommentWithProfile[]>(
         ['announcementComments', announcementId],
-        (oldData = []) => [...oldData, newComment]
+        (oldData = []) => [...(oldData || []), newComment]
       );
       
       // Also invalidate the query to ensure we have the latest data
@@ -168,7 +178,7 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   });
 
   // Delete comment mutation
-  const deleteComment = useMutation({
+  const deleteComment = useMutation<string, Error, string>({
     mutationFn: async (commentId: string) => {
       console.log('Deleting comment:', commentId);
       
@@ -189,9 +199,9 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
       console.log('Updating UI after comment deletion');
       
       // Optimistically update the UI by removing the deleted comment
-      queryClient.setQueryData<AnnouncementComment[]>(
+      queryClient.setQueryData<AnnouncementCommentWithProfile[]>(
         ['announcementComments', announcementId],
-        (oldData = []) => oldData.filter(comment => comment.id !== deletedCommentId)
+        (oldData = []) => (oldData || []).filter(comment => comment.id !== deletedCommentId)
       );
       
       // Also invalidate the query to ensure we have the latest data
@@ -222,143 +232,147 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     addComment.mutate(commentText.trim());
   };
 
-  const formatDate = (dateString: string) => {
-    return formatDistanceToNow(new Date(dateString), { 
+  const formatDate = (dateString: string | Date) => {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
+    if (isNaN(date.getTime())) return ''; // Handle invalid dates
+    
+    return formatDistanceToNow(date, { 
       addSuffix: true,
-      locale: document.documentElement.lang === 'sq' ? sq : en,
+      locale: typeof document !== 'undefined' && document.documentElement?.lang === 'sq' ? sq : en,
     });
   };
 
   if (!isExpanded) {
     return (
       <div className="mt-4 pt-2 border-t border-gray-100">
-        <button
-          onClick={() => setIsExpanded(true)}
-          className="flex items-center text-sm text-gray-500 hover:text-gray-700"
-        >
-          <MessageSquare className="h-4 w-4 mr-1" />
-          {comments.length > 0 ? `View ${comments.length} ${comments.length === 1 ? 'comment' : 'comments'}` : 'Add a comment'}
-        </button>
       </div>
     );
   }
-
-  return (
-    <div className="mt-4 pt-4 border-t border-gray-100">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-medium">Comments</h3>
-        <button
-          onClick={() => setIsExpanded(false)}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          Hide comments
-        </button>
+  
+  if (isError) {
+    return (
+      <Alert variant="destructive" className="mb-4">
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription className="flex items-center">
+          {t('comments.loadError')}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => refetch()}
+            className="ml-2 h-6 px-2 text-xs"
+          >
+            {t('common.retry')}
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  
+  if (comments.length === 0) {
+    return (
+      <div className="text-center py-4 text-sm text-muted-foreground">
+        {t('comments.noComments', 'No comments yet. Be the first to comment!')}
       </div>
-
-      {/* Comment form */}
-      {user && (
-        <form onSubmit={handleSubmit} className="mb-6">
-          <div className="flex gap-3">
-            <Avatar className="h-10 w-10 flex-shrink-0">
-              <AvatarImage src={user.user_metadata?.avatar_url || ''} />
-              <AvatarFallback>
-                {user.user_metadata?.full_name?.[0]?.toUpperCase() || 
-                 user.user_metadata?.name?.[0]?.toUpperCase() || 
-                 user.name?.[0]?.toUpperCase() || 'U'}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 space-y-2">
-              <Textarea
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="Write a comment..."
-                rows={2}
-                className="resize-none"
-              />
-              <div className="flex justify-end">
-                <Button 
-                  type="submit" 
-                  size="sm"
-                  disabled={!commentText.trim() || addComment.isPending}
-                >
-                  {addComment.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Send className="h-4 w-4 mr-2" />
-                  )}
-                  Post Comment
-                </Button>
-              </div>
-            </div>
-          </div>
-        </form>
-      )}
-
-      {/* Comments list */}
-      <div className="space-y-4">
-        {isLoading ? (
-          <div className="flex justify-center py-4">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-          </div>
-        ) : isError ? (
-          <div className="text-center py-4 text-sm text-red-500">
-            Failed to load comments. Please try again.
+    );
+  }
+  
+  return (
+    <div className="space-y-4">
+      {isLoading ? (
+        <div className="flex justify-center py-4">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </div>
+      ) : isError ? (
+        <Alert variant="destructive" className="mb-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="flex items-center">
+            {t('comments.loadError')}
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => refetch()}
-              className="ml-2"
+              className="ml-2 h-6 px-2 text-xs"
             >
-              Retry
+              {t('common.retry')}
             </Button>
-          </div>
-        ) : comments.length === 0 ? (
-          <div className="text-center py-4 text-sm text-gray-500">
-            No comments yet. Be the first to comment!
-          </div>
-        ) : (
-          comments.map((comment) => (
+          </AlertDescription>
+        </Alert>
+      ) : comments.length === 0 ? (
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {t('comments.noComments', 'No comments yet. Be the first to comment!')}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {comments.map((comment) => (
             <div key={comment.id} className="flex gap-3 group">
               <Avatar className="h-10 w-10 flex-shrink-0">
-                <AvatarImage src={comment.profiles?.avatar_url || ''} />
+                <AvatarImage 
+                  src={comment.profiles?.avatar_url || ''} 
+                  alt={comment.profiles?.name || ''} 
+                />
                 <AvatarFallback>
                   {comment.profiles?.name?.[0]?.toUpperCase() || 'U'}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <div className="bg-gray-50 rounded-lg p-3">
+                <div className="bg-muted/50 rounded-lg p-3">
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="font-medium text-sm">
-                        {comment.profiles?.name || 'User'}
+                        {comment.profiles?.name || t('common.anonymous', 'Anonymous')}
                       </span>
-                      <span className="text-xs text-gray-500 ml-2">
+                      <span className="text-xs text-muted-foreground ml-2">
                         {formatDate(comment.created_at)}
                       </span>
                     </div>
                     {user?.id === comment.user_id && (
                       <button
                         onClick={() => {
-                          if (window.confirm('Are you sure you want to delete this comment?')) {
+                          if (window.confirm(t('comments.deleteConfirm', 'Are you sure you want to delete this comment?'))) {
                             deleteComment.mutate(comment.id);
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity"
-                        aria-label="Delete comment"
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+                        aria-label={t('common.delete', 'Delete')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
                   </div>
-                  <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
+                  <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">
                     {comment.content}
                   </p>
                 </div>
               </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
+      
+      <form onSubmit={handleSubmit} className="mt-4">
+        <div className="flex gap-2">
+          <Textarea
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            placeholder={t('comments.placeholder', 'Write a comment...')}
+            className="flex-1 min-h-[80px]"
+            disabled={addComment.isPending}
+          />
+          <Button 
+            type="submit" 
+            size="icon" 
+            disabled={!commentText.trim() || addComment.isPending}
+          >
+            {addComment.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 };
+
+// ... (rest of the code remains the same)
