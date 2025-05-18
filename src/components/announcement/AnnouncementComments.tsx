@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { formatDistanceToNow } from 'date-fns';
-import { enUS as en, sq } from 'date-fns/locale';
 import { Loader2, Send, Trash2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
@@ -35,6 +34,11 @@ interface AnnouncementCommentsProps {
   announcementId: string;
 }
 
+// Define error type for Supabase errors
+interface SupabaseError extends Error {
+  code?: string;
+}
+
 export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsProps) => {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -42,23 +46,19 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
-  
-  if (!announcementId) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>Missing announcement ID</AlertDescription>
-      </Alert>
-    );
-  }
 
   // Fetch comments for this announcement with error handling and caching
-  const { data: comments = [], isLoading, isError, error } = useQuery<AnnouncementCommentWithProfile[]>({
+  const { 
+    data: comments = [], 
+    isLoading, 
+    isError, 
+    error 
+  } = useQuery<AnnouncementCommentWithProfile[]>({
     queryKey: ['announcementComments', announcementId],
     queryFn: async (): Promise<AnnouncementCommentWithProfile[]> => {
+      if (!announcementId) return [];
+      
       try {
-        if (!announcementId) return [];
-        
         // Fetch comments
         const { data: comments, error: commentsError } = await supabase
           .from('announcement_comments')
@@ -94,10 +94,12 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     // Cache comments for 5 minutes
     staleTime: 5 * 60 * 1000,
     // Don't retry on 404 errors
-    retry: (failureCount, error) => {
-      if ((error as any)?.code === 'PGRST116') return false; // Not found
+    retry: (failureCount, error: unknown) => {
+      const supabaseError = error as SupabaseError;
+      if (supabaseError?.code === 'PGRST116') return false; // Not found
       return failureCount < 3;
-    }
+    },
+    enabled: !!announcementId
   });
 
   // Handle comment submission
@@ -194,54 +196,89 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   }
 
   // Show empty state
-  if (!comments.length) {
+  if (comments.length === 0) {
     return (
-      <div className="text-center py-4 text-sm text-muted-foreground">
-        No comments yet. Be the first to comment!
+      <div className="space-y-4">
+        <div className="text-center py-4 text-sm text-muted-foreground">
+          {t('comments.noComments', 'No comments yet. Be the first to comment!')}
+        </div>
+        
+        <form onSubmit={handleSubmitComment} className="mt-4">
+          <div className="flex items-end gap-2">
+            <Textarea
+              placeholder={t('comments.placeholder', 'Write a comment...')}
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              className="min-h-[80px] flex-1"
+              disabled={isSubmitting}
+            />
+            <Button 
+              type="submit" 
+              size="sm" 
+              className="self-end"
+              disabled={!commentText.trim() || isSubmitting}
+            >
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </form>
       </div>
     );
   }
 
+  // Show comments list with form
   return (
     <div className="space-y-4">
       <div className="space-y-4">
         {comments.map((comment) => (
-          <div key={comment.id} className="flex items-start gap-3">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={comment.profiles?.avatar_url || ''} />
+          <div key={comment.id} className="flex gap-3 group">
+            <Avatar className="h-10 w-10 flex-shrink-0">
+              <AvatarImage 
+                src={comment.profiles?.avatar_url || ''} 
+                alt={comment.profiles?.name || ''} 
+              />
               <AvatarFallback>
-                {comment.profiles?.name?.charAt(0) || 'U'}
+                {comment.profiles?.name?.[0]?.toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">
-                  {comment.profiles?.name || 'Unknown User'}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                </span>
-                {user?.id === comment.user_id && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 ml-auto"
-                    onClick={() => handleDeleteComment(comment.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                )}
+            <div className="flex-1">
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="font-medium text-sm">
+                      {comment.profiles?.name || t('common.anonymous', 'Anonymous')}
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+                    </span>
+                  </div>
+                  {user?.id === comment.user_id && (
+                    <button
+                      onClick={() => handleDeleteComment(comment.id)}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+                      aria-label={t('common.delete', 'Delete')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">
+                  {comment.content}
+                </p>
               </div>
-              <p className="text-sm">{comment.content}</p>
             </div>
           </div>
         ))}
       </div>
-
+      
       <form onSubmit={handleSubmitComment} className="mt-4">
         <div className="flex items-end gap-2">
           <Textarea
-            placeholder="Add a comment..."
+            placeholder={t('comments.placeholder', 'Write a comment...')}
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
             className="min-h-[80px] flex-1"
@@ -264,112 +301,3 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     </div>
   );
 };
-  
-  if (comments.length === 0) {
-    return (
-      <div className="text-center py-4 text-sm text-muted-foreground">
-        {t('comments.noComments', 'No comments yet. Be the first to comment!')}
-      </div>
-    );
-  }
-  
-  return (
-    <div className="space-y-4">
-      {isLoading ? (
-        <div className="flex justify-center py-4">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
-      ) : isError ? (
-        <Alert variant="destructive" className="mb-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription className="flex items-center">
-            {t('comments.loadError')}
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => refetch()}
-              className="ml-2 h-6 px-2 text-xs"
-            >
-              {t('common.retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      ) : comments.length === 0 ? (
-        <div className="text-center py-4 text-sm text-muted-foreground">
-          {t('comments.noComments', 'No comments yet. Be the first to comment!')}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {comments.map((comment) => (
-            <div key={comment.id} className="flex gap-3 group">
-              <Avatar className="h-10 w-10 flex-shrink-0">
-                <AvatarImage 
-                  src={comment.profiles?.avatar_url || ''} 
-                  alt={comment.profiles?.name || ''} 
-                />
-                <AvatarFallback>
-                  {comment.profiles?.name?.[0]?.toUpperCase() || 'U'}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="font-medium text-sm">
-                        {comment.profiles?.name || t('common.anonymous', 'Anonymous')}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-2">
-                        {formatDate(comment.created_at)}
-                      </span>
-                    </div>
-                    {user?.id === comment.user_id && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm(t('comments.deleteConfirm', 'Are you sure you want to delete this comment?'))) {
-                            deleteComment.mutate(comment.id);
-                          }
-                        }}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-                        aria-label={t('common.delete', 'Delete')}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-foreground/90 whitespace-pre-wrap break-words">
-                    {comment.content}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      <form onSubmit={handleSubmit} className="mt-4">
-        <div className="flex gap-2">
-          <Textarea
-            value={commentText}
-            onChange={(e) => setCommentText(e.target.value)}
-            placeholder={t('comments.placeholder', 'Write a comment...')}
-            className="flex-1 min-h-[80px]"
-            disabled={addComment.isPending}
-          />
-          <Button 
-            type="submit" 
-            size="icon" 
-            disabled={!commentText.trim() || addComment.isPending}
-          >
-            {addComment.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </form>
-    </div>
-  );
-};
-
-// ... (rest of the code remains the same)
