@@ -2,6 +2,16 @@ import { useState, useEffect, Component, ErrorInfo, ReactNode } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+
+// Define a type for the course admin data
+interface CourseAdmin {
+  id: string;
+  user_id: string;
+  course_id: string;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
 import { useAuth } from "../context/AuthContext";
 import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -310,66 +320,56 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
   const [isClassAdmin, setIsClassAdmin] = useState(false);
   const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
   
-  // Simplified admin status check with error boundary and cleanup
+  // Simplified admin status check with direct query
   useEffect(() => {
-    const isMounted = { current: true };
+    let isMounted = true;
     
     const checkAdminStatus = async () => {
+      if (!user?.id || !courseId) {
+        if (isMounted) setIsClassAdmin(false);
+        return;
+      }
+      
+      // If user is instructor, they are automatically an admin
+      if (isInstructor) {
+        if (isMounted) setIsClassAdmin(true);
+        return;
+      }
+      
       try {
-        // Skip if no user or course ID
-        if (!user?.id || !courseId) {
-          if (isMounted.current) setIsClassAdmin(false);
-          return;
-        }
+        if (isMounted) setIsCheckingAdminStatus(true);
         
-        // Skip if already an instructor
-        if (isInstructor) {
-          if (isMounted.current) setIsClassAdmin(true);
-          return;
-        }
+        // Use a direct query instead of RPC to avoid potential function issues
+        // Using type assertion with a more specific type
+        const { data, error } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+          .from('course_admins')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('course_id', courseId)
+          .eq('status', 'approved')
+          .maybeSingle();
         
-        if (isMounted.current) setIsCheckingAdminStatus(true);
+        if (!isMounted) return;
         
-        try {
-          // Use RPC with proper error handling and type safety
-          const { data, error } = await (supabase as unknown as {
-            rpc: (fn: string, params: { user_id: string; course_id: string }) => 
-              Promise<{ data: boolean | boolean[]; error: { message: string } | null }>
-          }).rpc('check_course_admin', { 
-            user_id: user.id, 
-            course_id: courseId 
-          });
-          
-          if (!isMounted.current) return;
-          
-          if (error) {
-            console.error('Error checking admin status:', error.message);
-            if (isMounted.current) setIsClassAdmin(false);
-          } else {
-            // User is an admin if we found any matching rows
-            const isAdmin = Array.isArray(data) ? data.length > 0 : !!data;
-            if (isMounted.current) setIsClassAdmin(isAdmin);
-          }
-        } catch (err) {
-          console.error('Exception in RPC call:', err);
-          if (isMounted.current) setIsClassAdmin(false);
-        }
-        
-        if (isMounted.current) setIsCheckingAdminStatus(false);
-      } catch (err) {
-        console.error('Unexpected error in checkAdminStatus:', err);
-        if (isMounted.current) {
+        if (error) {
+          console.error('Error checking admin status:', error);
           setIsClassAdmin(false);
-          setIsCheckingAdminStatus(false);
+        } else {
+          // If we have data, user is an admin
+          setIsClassAdmin(!!data);
         }
+      } catch (err) {
+        console.error('Error in admin status check:', err);
+        if (isMounted) setIsClassAdmin(false);
+      } finally {
+        if (isMounted) setIsCheckingAdminStatus(false);
       }
     };
     
     checkAdminStatus();
     
-    // Cleanup function
     return () => {
-      isMounted.current = false;
+      isMounted = false;
     };
   }, [user?.id, courseId, isInstructor]);
   // Define isStudent based on user role and admin status
@@ -598,5 +598,6 @@ const CourseDetailPage = (props: CourseDetailPageProps) => (
     <CourseDetailPageContent {...props} />
   </ErrorBoundary>
 );
+
 
 export default CourseDetailPage;
