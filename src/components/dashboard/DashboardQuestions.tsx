@@ -15,6 +15,8 @@ type QuestionWithCourseTitle = QuestionRow & {
 type Question = Omit<QuestionRow, 'instructor_id'> & {
   course_title: string;
   question: string; // added question property
+  linked_comment_id?: string | null;
+  status?: string;
 };
 
 export const DashboardQuestions = () => {
@@ -69,13 +71,20 @@ export const DashboardQuestions = () => {
     retryDelay: 1000
   });
 
-  // Create a comment from a question
+  // Create a class comment from a question
   const createCommentFromQuestion = async (question: Question) => {
     if (!user) return;
     
     setIsCreatingComment(true);
     try {
-      // First create the comment
+      // First, ensure the question isn't already converted
+      if (question.status === 'converted_to_comment' && question.linked_comment_id) {
+        // If already converted, just navigate to the comment
+        navigate(`/courses/${question.course_id}/discussion#comment-${question.linked_comment_id}`);
+        return;
+      }
+
+      // Create the comment
       const { data: comment, error: commentError } = await supabase
         .from('comments')
         .insert({
@@ -83,34 +92,45 @@ export const DashboardQuestions = () => {
           user_id: question.student_id,
           course_id: question.course_id,
           parent_id: null,
-          is_question: true
+          is_question: true,
+          metadata: {
+            original_question_id: question.id,
+            converted_at: new Date().toISOString(),
+            converted_by: user.id
+          }
         })
         .select()
         .single();
       
       if (commentError) throw commentError;
       
-      // Then update the question with the comment ID
+      // Update the question with the comment ID and mark as converted
       const { error: updateError } = await supabase
         .from('questions')
         .update({ 
           status: 'converted_to_comment',
-          linked_comment_id: comment.id 
+          linked_comment_id: comment.id,
+          updated_at: new Date().toISOString()
         })
         .eq('id', question.id);
       
       if (updateError) throw updateError;
       
-      // Invalidate queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ['instructorQuestions', user.id] });
+      // Invalidate and refetch
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['instructorQuestions', user.id] }),
+        queryClient.invalidateQueries({ queryKey: ['comments', question.course_id] })
+      ]);
       
       toast({
         title: 'Sukses!',
-        description: 'Pyetja u konvertua në koment me sukses.',
+        description: 'Pyetja u konvertua në koment të klasës me sukses.',
       });
       
-      // Navigate to the course discussion
-      navigate(`/courses/${question.course_id}/discussion`);
+      // Navigate to the course discussion and scroll to the new comment
+      setTimeout(() => {
+        navigate(`/courses/${question.course_id}/discussion#comment-${comment.id}`);
+      }, 500);
       
     } catch (error) {
       console.error('Error converting question to comment:', error);

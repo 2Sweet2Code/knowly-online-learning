@@ -186,29 +186,42 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     }
   }, [courseData]);
 
-  // Check enrollment
+  // Check enrollment and instructor status
   useEffect(() => {
     const checkEnrollment = async () => {
       if (!user?.id || !courseId) return;
 
       try {
+        // Check if user is the instructor of this course
+        const { data: instructorData, error: instructorError } = await supabase
+          .from('courses')
+          .select('instructor_id')
+          .eq('id', courseId)
+          .single();
+
+        if (instructorError) throw instructorError;
+
+        // If user is the instructor, set as enrolled and instructor
+        if (instructorData?.instructor_id === user.id) {
+          setIsEnrolled(true);
+          setIsInstructor(true);
+          return;
+        }
+
+        // Check if user is enrolled
         const { data, error } = await supabase
           .from('course_enrollments')
           .select('*')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
-          .single();
+          .maybeSingle();
 
-        if (error) {
-          console.error('Error checking enrollment:', error);
-          return;
-        }
+        if (error) throw error;
 
-        if (data) {
-          setIsEnrolled(true);
-        }
+        setIsEnrolled(!!data);
       } catch (error) {
         console.error('Error checking enrollment:', error);
+        setError('Failed to check course enrollment status');
       }
     };
 
@@ -216,8 +229,32 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   }, [user, courseId]);
 
   const handleEnroll = async () => {
-    if (!user?.id || !courseId) return;
+    if (!user?.id || !courseId) {
+      setError('You must be logged in to enroll in a course');
+      return;
+    }
 
+    // Prevent double enrollment
+    if (isEnrolled) {
+      toast({
+        title: 'Already Enrolled',
+        description: 'You are already enrolled in this course.',
+      });
+      return;
+    }
+
+    // Prevent instructors from enrolling in their own course
+    if (isInstructor) {
+      toast({
+        title: 'Instructor Access',
+        description: 'You are the instructor of this course and do not need to enroll.',
+        variant: 'default',
+      });
+      return;
+    }
+
+    setIsEnrolling(true);
+    
     try {
       const { data, error } = await supabase
         .from('course_enrollments')
@@ -225,22 +262,46 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
           user_id: user.id,
           course_id: courseId,
           status: 'enrolled',
-        });
+          enrolled_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
-      if (error) {
-        console.error('Error enrolling in course:', error);
-        setError('Failed to enroll in course');
-        return;
-      }
+      if (error) throw error;
 
       setIsEnrolled(true);
+      
+      // Invalidate relevant queries
+      queryClient.invalidateQueries({ 
+        queryKey: ['course', courseId, 'enrollments'] 
+      });
+      
       toast({
-        title: 'Enrolled in course',
+        title: 'Enrollment Successful',
         description: 'You have successfully enrolled in the course.',
       });
+      
+      // Refresh the page to update the UI
+      window.location.reload();
+      
     } catch (error) {
       console.error('Error enrolling in course:', error);
-      setError('Failed to enroll in course');
+      
+      let errorMessage = 'Failed to enroll in course. Please try again.';
+      
+      // Check for specific error codes
+      const pgError = error as PostgrestError;
+      if (pgError?.code === '23505') {
+        errorMessage = 'You are already enrolled in this course.';
+      }
+      
+      toast({
+        title: 'Enrollment Failed',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsEnrolling(false);
     }
   };
 
@@ -283,8 +344,16 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
                   )}
                 </div>
                 <div className="flex space-x-2">
-                  {!isEnrolled && (
-                    <Button onClick={handleEnroll} disabled={isEnrolling}>
+                  {isInstructor ? (
+                    <div className="px-4 py-2 bg-blue-100 text-blue-800 rounded-md text-sm">
+                      You are the instructor of this course
+                    </div>
+                  ) : !isEnrolled ? (
+                    <Button 
+                      onClick={handleEnroll} 
+                      disabled={isEnrolling}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
                       {isEnrolling ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -294,6 +363,10 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
                         'Enroll in Course'
                       )}
                     </Button>
+                  ) : (
+                    <div className="px-4 py-2 bg-green-100 text-green-800 rounded-md text-sm">
+                      You are enrolled in this course
+                    </div>
                   )}
                 </div>
               </div>
