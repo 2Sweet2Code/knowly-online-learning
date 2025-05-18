@@ -28,6 +28,8 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   const { data: comments = [], isLoading, isError, refetch } = useQuery<AnnouncementComment[]>({
     queryKey: ['announcementComments', announcementId],
     queryFn: async () => {
+      console.log('Fetching comments for announcement:', announcementId);
+      
       // First, get the comments
       const { data: commentsData, error: commentsError } = await supabase
         .from('announcement_comments')
@@ -35,11 +37,19 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         .eq('announcement_id', announcementId)
         .order('created_at', { ascending: true });
 
-      if (commentsError) throw commentsError;
-      if (!commentsData || commentsData.length === 0) return [];
+      if (commentsError) {
+        console.error('Error fetching comments:', commentsError);
+        throw commentsError;
+      }
+      
+      if (!commentsData || commentsData.length === 0) {
+        console.log('No comments found for announcement:', announcementId);
+        return [];
+      }
 
       // Get unique user IDs from comments
       const userIds = [...new Set(commentsData.map(comment => comment.user_id))];
+      console.log('Fetching profiles for users:', userIds);
       
       // Get user profiles
       const { data: profilesData, error: profilesError } = await supabase
@@ -47,7 +57,10 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         .select('id, name, avatar_url')
         .in('id', userIds);
 
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        throw profilesError;
+      }
 
       // Create a map of user IDs to profiles
       const profilesMap = new Map(profilesData?.map(profile => [profile.id, {
@@ -56,18 +69,25 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
       }]));
 
       // Combine comments with profiles
-      return commentsData.map(comment => ({
+      const combinedComments = commentsData.map(comment => ({
         ...comment,
         profiles: profilesMap.get(comment.user_id) || null
       }));
+      
+      console.log('Returning combined comments:', combinedComments);
+      return combinedComments;
     },
-    enabled: isExpanded,
+    enabled: true, // Always enable the query
+    refetchOnWindowFocus: true, // Refetch when window regains focus
+    staleTime: 5 * 60 * 1000, // 5 minutes before data is considered stale
   });
 
   // Add new comment mutation
   const addComment = useMutation({
     mutationFn: async (content: string) => {
       if (!user?.id) throw new Error('User not authenticated');
+      
+      console.log('Adding comment to announcement:', announcementId);
       
       // Insert the new comment
       const { data: commentData, error: commentError } = await supabase
@@ -80,12 +100,17 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         .select()
         .single();
       
-      if (commentError) throw commentError;
+      if (commentError) {
+        console.error('Error adding comment:', commentError);
+        throw commentError;
+      }
+      
+      console.log('Comment added successfully:', commentData);
       
       // Get the user's profile
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('name, avatar_url')
+        .select('id, name, avatar_url')
         .eq('id', user.id)
         .single();
       
@@ -99,23 +124,44 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
       }
       
       // Return comment with profile data
-      return {
+      const commentWithProfile = {
         ...commentData,
         profiles: {
           name: profileData.name,
           avatar_url: profileData.avatar_url
         }
       } as AnnouncementComment;
+      
+      console.log('Returning comment with profile:', commentWithProfile);
+      return commentWithProfile;
     },
-    onSuccess: () => {
+    onSuccess: (newComment) => {
+      console.log('Comment added successfully, updating UI');
       setCommentText('');
-      queryClient.invalidateQueries({ queryKey: ['announcementComments', announcementId] });
+      
+      // Update the query data with the new comment
+      queryClient.setQueryData<AnnouncementComment[]>(
+        ['announcementComments', announcementId],
+        (oldData = []) => [...oldData, newComment]
+      );
+      
+      // Also invalidate the query to ensure we have the latest data
+      queryClient.invalidateQueries({ 
+        queryKey: ['announcementComments', announcementId],
+        refetchType: 'active',
+      });
+      
+      toast({
+        title: 'Success',
+        description: 'Comment added successfully',
+        variant: 'default',
+      });
     },
     onError: (error) => {
-      console.error('Error adding comment:', error);
+      console.error('Error in addComment mutation:', error);
       toast({
         title: 'Error',
-        description: 'Failed to add comment. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to add comment. Please try again.',
         variant: 'destructive',
       });
     },
@@ -124,26 +170,47 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
   // Delete comment mutation
   const deleteComment = useMutation({
     mutationFn: async (commentId: string) => {
+      console.log('Deleting comment:', commentId);
+      
       const { error } = await supabase
         .from('announcement_comments')
         .delete()
         .eq('id', commentId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error deleting comment:', error);
+        throw error;
+      }
+      
+      console.log('Comment deleted successfully:', commentId);
       return commentId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['announcementComments', announcementId] });
+    onSuccess: (deletedCommentId) => {
+      console.log('Updating UI after comment deletion');
+      
+      // Optimistically update the UI by removing the deleted comment
+      queryClient.setQueryData<AnnouncementComment[]>(
+        ['announcementComments', announcementId],
+        (oldData = []) => oldData.filter(comment => comment.id !== deletedCommentId)
+      );
+      
+      // Also invalidate the query to ensure we have the latest data
+      queryClient.invalidateQueries({ 
+        queryKey: ['announcementComments', announcementId],
+        refetchType: 'active',
+      });
+      
       toast({
         title: 'Success',
         description: 'Comment deleted successfully',
+        variant: 'default',
       });
     },
     onError: (error) => {
-      console.error('Error deleting comment:', error);
+      console.error('Error in deleteComment mutation:', error);
       toast({
         title: 'Error',
-        description: 'Failed to delete comment',
+        description: error instanceof Error ? error.message : 'Failed to delete comment. Please try again.',
         variant: 'destructive',
       });
     },
@@ -193,9 +260,11 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
         <form onSubmit={handleSubmit} className="mb-6">
           <div className="flex gap-3">
             <Avatar className="h-10 w-10 flex-shrink-0">
-              <AvatarImage src={user.user_metadata?.avatar_url} />
+              <AvatarImage src={user.user_metadata?.avatar_url || ''} />
               <AvatarFallback>
-                {user.user_metadata?.full_name?.[0]?.toUpperCase() || 'U'}
+                {user.user_metadata?.full_name?.[0]?.toUpperCase() || 
+                 user.user_metadata?.name?.[0]?.toUpperCase() || 
+                 user.name?.[0]?.toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 space-y-2">

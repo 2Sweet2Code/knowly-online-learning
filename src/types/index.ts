@@ -7,6 +7,7 @@ export interface User {
     name?: string;
     role?: string;
     full_name?: string;
+    avatar_url?: string;
   };
 }
 

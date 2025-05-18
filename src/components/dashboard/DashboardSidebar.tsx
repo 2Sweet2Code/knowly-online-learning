@@ -57,14 +57,7 @@ export const DashboardSidebar = ({
             Studentët
           </NavLink>
         </li>
-        <li>
-          <NavLink 
-            to="/dashboard/questions" 
-            className={getNavLinkClass}
-          >
-            Pyetjet
-          </NavLink>
-        </li>
+
         <li>
           <NavLink 
             to="settings" 

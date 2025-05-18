@@ -10,7 +10,6 @@ import { DashboardAnalytics } from "../components/dashboard/DashboardAnalytics";
 import { DashboardSettings } from "../components/dashboard/DashboardSettings";
 import { DashboardUserManagement } from "../components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "../components/dashboard/DashboardContentModeration";
-import { DashboardQuestions } from "../components/dashboard/DashboardQuestions";
 import { CreateCourseModal } from "../components/modals/CreateCourseModal";
 import { useAuth } from "../context/AuthContext";
 import { Navigate, Routes, Route } from "react-router-dom";
@@ -99,7 +98,6 @@ const DashboardPage = () => {
                 </Route>
                 <Route path="students" element={<DashboardStudents />} />
                 <Route path="analytics" element={<DashboardAnalytics />} />
-                <Route path="questions" element={<DashboardQuestions />} />
                 <Route path="settings" element={<DashboardSettings />} />
                 {user?.role === 'admin' && (
                   <>
