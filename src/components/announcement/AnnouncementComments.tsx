@@ -204,50 +204,46 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
 
   return (
     <div className="space-y-4">
-      {/* Comment list */}
       <div className="space-y-4">
         {comments.map((comment) => (
-          <div key={comment.id} className="flex gap-3">
+          <div key={comment.id} className="flex items-start gap-3">
             <Avatar className="h-8 w-8">
               <AvatarImage src={comment.profiles?.avatar_url || ''} />
               <AvatarFallback>
                 {comment.profiles?.name?.charAt(0) || 'U'}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1">
+            <div className="flex-1 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">
                   {comment.profiles?.name || 'Unknown User'}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(comment.created_at), {
-                    addSuffix: true,
-                    locale: document.documentElement.lang === 'sq' ? sq : en
-                  })}
+                  {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
                 </span>
                 {user?.id === comment.user_id && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 ml-auto"
                     onClick={() => handleDeleteComment(comment.id)}
-                    className="ml-auto text-red-500 hover:text-red-700"
-                    disabled={isSubmitting}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
                 )}
               </div>
-              <p className="mt-1 text-sm">{comment.content}</p>
+              <p className="text-sm">{comment.content}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Comment form */}
-      <form onSubmit={handleSubmitComment} className="mt-6">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmitComment} className="mt-4">
+        <div className="flex items-end gap-2">
           <Textarea
+            placeholder="Add a comment..."
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
-            placeholder="Write a comment..."
             className="min-h-[80px] flex-1"
             disabled={isSubmitting}
           />
@@ -268,221 +264,6 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     </div>
   );
 };
-        .select('*')
-        .eq('announcement_id', announcementId)
-        .order('created_at', { ascending: true });
-
-      if (commentsError) {
-        console.error('Error fetching comments:', commentsError);
-        throw commentsError;
-      }
-      
-      if (!commentsData || commentsData.length === 0) {
-        console.log('No comments found for announcement:', announcementId);
-        return [];
-      }
-
-      // Get unique user IDs from comments
-      const userIds = [...new Set(commentsData.map(comment => comment.user_id))];
-      console.log('Fetching profiles for users:', userIds);
-      
-      // Get user profiles
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, avatar_url')
-        .in('id', userIds);
-
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        throw profilesError;
-      }
-
-      // Create a map of user IDs to profiles
-      const profilesMap = new Map(profilesData?.map(profile => [profile.id, {
-        name: profile.name,
-        avatar_url: profile.avatar_url
-      }]));
-
-      // Combine comments with profiles
-      const combinedComments: AnnouncementCommentWithProfile[] = commentsData.map(comment => ({
-        ...comment,
-        profiles: profilesMap.get(comment.user_id) || null
-      }));
-      
-      console.log('Returning combined comments:', combinedComments);
-      return combinedComments;
-    },
-    enabled: true, // Always enable the query
-    refetchOnWindowFocus: true, // Refetch when window regains focus
-    staleTime: 5 * 60 * 1000, // 5 minutes before data is considered stale
-  });
-
-  // Add new comment mutation
-  const addComment = useMutation<AnnouncementCommentWithProfile, Error, string>({
-    mutationFn: async (content: string) => {
-      if (!user?.id) throw new Error('User not authenticated');
-      
-      console.log('Adding comment to announcement:', announcementId);
-      
-      // Insert the new comment
-      const { data: commentData, error: commentError } = await supabase
-        .from('announcement_comments')
-        .insert({
-          content, 
-          announcement_id: announcementId,
-          user_id: user.id,
-        })
-        .select('*')
-        .single();
-      
-      if (commentError || !commentData) {
-        console.error('Error adding comment:', commentError);
-        throw commentError || new Error('Failed to add comment');
-      }
-      
-      console.log('Comment added successfully:', commentData);
-      
-      // Get the user's profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, name, avatar_url')
-        .eq('id', user.id)
-        .single();
-      
-      // Create the comment with profile data
-      const commentWithProfile: AnnouncementCommentWithProfile = {
-        ...commentData,
-        profiles: profileData ? {
-          name: profileData.name,
-          avatar_url: profileData.avatar_url
-        } : null
-      };
-      
-      console.log('Returning comment with profile:', commentWithProfile);
-      return commentWithProfile;
-    },
-    onSuccess: (newComment) => {
-      console.log('Comment added successfully, updating UI');
-      setCommentText('');
-      
-      // Update the query data with the new comment
-      queryClient.setQueryData<AnnouncementCommentWithProfile[]>(
-        ['announcementComments', announcementId],
-        (oldData = []) => [...(oldData || []), newComment]
-      );
-      
-      // Also invalidate the query to ensure we have the latest data
-      queryClient.invalidateQueries({ 
-        queryKey: ['announcementComments', announcementId],
-        refetchType: 'active',
-      });
-      
-      toast({
-        title: 'Success',
-        description: 'Comment added successfully',
-        variant: 'default',
-      });
-    },
-    onError: (error) => {
-      console.error('Error in addComment mutation:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to add comment. Please try again.',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  // Delete comment mutation
-  const deleteComment = useMutation<string, Error, string>({
-    mutationFn: async (commentId: string) => {
-      console.log('Deleting comment:', commentId);
-      
-      const { error } = await supabase
-        .from('announcement_comments')
-        .delete()
-        .eq('id', commentId);
-      
-      if (error) {
-        console.error('Error deleting comment:', error);
-        throw error;
-      }
-      
-      console.log('Comment deleted successfully:', commentId);
-      return commentId;
-    },
-    onSuccess: (deletedCommentId) => {
-      console.log('Updating UI after comment deletion');
-      
-      // Optimistically update the UI by removing the deleted comment
-      queryClient.setQueryData<AnnouncementCommentWithProfile[]>(
-        ['announcementComments', announcementId],
-        (oldData = []) => (oldData || []).filter(comment => comment.id !== deletedCommentId)
-      );
-      
-      // Also invalidate the query to ensure we have the latest data
-      queryClient.invalidateQueries({ 
-        queryKey: ['announcementComments', announcementId],
-        refetchType: 'active',
-      });
-      
-      toast({
-        title: 'Success',
-        description: 'Comment deleted successfully',
-        variant: 'default',
-      });
-    },
-    onError: (error) => {
-      console.error('Error in deleteComment mutation:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to delete comment. Please try again.',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim()) return;
-    addComment.mutate(commentText.trim());
-  };
-
-  const formatDate = (dateString: string | Date) => {
-    const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
-    if (isNaN(date.getTime())) return ''; // Handle invalid dates
-    
-    return formatDistanceToNow(date, { 
-      addSuffix: true,
-      locale: typeof document !== 'undefined' && document.documentElement?.lang === 'sq' ? sq : en,
-    });
-  };
-
-  if (!isExpanded) {
-    return (
-      <div className="mt-4 pt-2 border-t border-gray-100">
-      </div>
-    );
-  }
-  
-  if (isError) {
-    return (
-      <Alert variant="destructive" className="mb-4">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription className="flex items-center">
-          {t('comments.loadError')}
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => refetch()}
-            className="ml-2 h-6 px-2 text-xs"
-          >
-            {t('common.retry')}
-          </Button>
-        </AlertDescription>
-      </Alert>
-    );
-  }
   
   if (comments.length === 0) {
     return (
