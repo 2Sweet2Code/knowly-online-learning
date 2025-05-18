@@ -41,7 +41,31 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       setError(null);
       
       try {
-        // First get all enrollments for this course with user details
+        // First get the course to find the instructor
+        const { data: course, error: courseError } = await supabase
+          .from('courses')
+          .select('instructor_id, instructor')
+          .eq('id', courseId)
+          .single();
+          
+        if (courseError) {
+          console.error('Error fetching course:', courseError);
+          throw courseError;
+        }
+        
+        // Define the type for enrollment with profile
+        type EnrollmentWithProfile = {
+          user_id: string;
+          profiles: {
+            id: string;
+            name: string;
+            email: string;
+            role: string;
+            avatar_url?: string;
+          } | null;
+        };
+        
+        // Then get all enrollments for this course with user details
         const { data: enrollments, error: enrollmentsError } = await supabase
           .from('enrollments')
           .select(`
@@ -54,7 +78,10 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
               avatar_url
             )
           `)
-          .eq('course_id', courseId);
+          .eq('course_id', courseId) as { 
+            data: EnrollmentWithProfile[] | null, 
+            error: { message: string; details?: string; hint?: string; code?: string } | null 
+          };
         
         if (enrollmentsError) {
           console.error('Error fetching enrollments:', enrollmentsError);
@@ -88,17 +115,55 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         }
         
         // Process the enrollments to get student data
-        const validClassmates = enrollments
-          .filter(e => e.profiles) // Filter out any enrollments without profile data
+        const classmatesFromEnrollments = enrollments
+          ?.filter(e => e.profiles) // Filter out any enrollments without profile data
           .map(enrollment => ({
             id: enrollment.user_id,
             name: enrollment.profiles?.name || 'Student',
             email: enrollment.profiles?.email || '',
-            role: (['student', 'instructor', 'admin'].includes(enrollment.profiles?.role) 
-              ? enrollment.profiles.role 
-              : 'student') as 'student' | 'instructor' | 'admin',
+            role: (['student', 'instructor', 'admin'].includes(enrollment.profiles?.role || '') 
+              ? (enrollment.profiles.role as 'student' | 'instructor' | 'admin')
+              : 'student'),
             avatar_url: enrollment.profiles?.avatar_url
-          }));
+          })) || [];
+          
+        const validClassmates = [...classmatesFromEnrollments];
+          
+        // Ensure the course instructor is included even if not in enrollments
+        if (course?.instructor_id) {
+          const instructorId = course.instructor_id;
+          const isInstructorInEnrollments = validClassmates.some(c => c.id === instructorId);
+          
+          if (!isInstructorInEnrollments) {
+            // Try to get instructor's profile
+            const { data: instructorProfile } = await supabase
+              .from('profiles')
+              .select('id, name, email, role, avatar_url')
+              .eq('id', instructorId)
+              .single();
+              
+            if (instructorProfile) {
+              validClassmates.push({
+                id: instructorProfile.id,
+                name: instructorProfile.name || 'Instructor',
+                email: instructorProfile.email || '',
+                role: (['student', 'instructor', 'admin'].includes(instructorProfile.role) 
+                  ? instructorProfile.role 
+                  : 'instructor') as 'student' | 'instructor' | 'admin',
+                avatar_url: instructorProfile.avatar_url
+              });
+            } else {
+              // Fallback to basic info from course
+              validClassmates.push({
+                id: instructorId,
+                name: course.instructor || 'Instructor',
+                email: '',
+                role: 'instructor',
+                avatar_url: ''
+              });
+            }
+          }
+        }
           
         setClassmates(validClassmates);
       } catch (error) {

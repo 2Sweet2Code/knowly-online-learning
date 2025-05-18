@@ -110,13 +110,31 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       
       if (error) throw error;
       
+      // Enroll the instructor in their own course
+      if (data && data.id) {
+        await supabase
+          .from('enrollments')
+          .insert({
+            user_id: user.id,
+            course_id: data.id,
+            status: 'enrolled',
+            enrolled_at: new Date().toISOString()
+          });
+        
+        // Update the student count
+        await supabase
+          .from('courses')
+          .update({ students: 1 })
+          .eq('id', data.id);
+      }
+      
       queryClient.invalidateQueries({ queryKey: ['courses'] });
       queryClient.invalidateQueries({ queryKey: ['instructorCourses', user.id] });
       queryClient.invalidateQueries({ queryKey: ['distinctCourseCategories'] });
       
       toast({
         title: "Sukses!",
-        description: "Kursi u krijua me sukses.",
+        description: "Kursi u krijua me sukses dhe ju jeni regjistruar si instruktor.",
       });
       
       if (onSuccess) {
