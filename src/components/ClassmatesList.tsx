@@ -96,17 +96,28 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         
         // Update the course with the correct student count if needed
         try {
+          // First, get all enrollments with user roles to filter out instructors
+          const { data: enrollmentsWithRoles } = await supabase
+            .from('enrollments')
+            .select('user_id, profiles:profiles!inner(role)')
+            .eq('course_id', courseId) as { data: Array<{ user_id: string, profiles: { role: string } }> | null };
+            
+          // Count only students (exclude instructors and admins)
+          const studentCount = enrollmentsWithRoles?.filter(e => 
+            e.profiles?.role === 'student'
+          ).length || 0;
+            
           const { data: courseData } = await supabase
             .from('courses')
             .select('students')
             .eq('id', courseId)
             .single();
             
-          if (courseData && courseData.students !== enrollments.length) {
-            // Update the student count to match the actual number of enrollments
+          if (courseData && courseData.students !== studentCount) {
+            // Update the student count to match the actual number of student enrollments
             await supabase
               .from('courses')
-              .update({ students: enrollments.length })
+              .update({ students: studentCount })
               .eq('id', courseId);
           }
         } catch (countError) {

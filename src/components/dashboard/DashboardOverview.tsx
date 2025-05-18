@@ -220,68 +220,6 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
         Paneli Kryesor (Përmbledhje)
       </h3>
       
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-cream rounded-lg p-6 shadow-sm">
-          <div className="flex items-center mb-4">
-            <BookOpen className="h-6 w-6 text-brown mr-2" />
-            <h4 className="font-medium">Kurset e Mia</h4>
-          </div>
-          <p className="text-3xl font-bold">{courses.length}</p>
-          <p className="text-gray-600 text-sm mt-1">Kurse aktive</p>
-        </div>
-        
-        <div className="bg-cream rounded-lg p-6 shadow-sm">
-          <div className="flex items-center mb-4">
-            <GraduationCap className="h-6 w-6 text-brown mr-2" />
-            <h4 className="font-medium">Studentët</h4>
-          </div>
-          <p className="text-3xl font-bold">
-            {courses.reduce((total, course) => total + (course.students || 0), 0)}
-          </p>
-          <p className="text-gray-600 text-sm mt-1">Studentë të regjistruar</p>
-        </div>
-        
-        <div className="bg-cream rounded-lg p-6 shadow-sm">
-          <div className="flex items-center mb-4">
-            <BookOpen className="h-6 w-6 text-brown mr-2" />
-            <h4 className="font-medium">Pyetje</h4>
-          </div>
-          <p className="text-3xl font-bold">0</p>
-          <p className="text-gray-600 text-sm mt-1">Pyetje në pritje</p>
-        </div>
-      </div>
-      
-      {/* Actions */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-playfair font-semibold">Kurset e Mia</h2>
-        <div className="flex gap-4">
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              if (onCreateCourseClick) {
-                onCreateCourseClick();
-              } else {
-                console.error('onCreateCourseClick handler is not defined');
-              }
-            }}
-            className="flex items-center gap-2 bg-gradient-to-r from-brown to-brown/90 text-white px-4 py-2.5 rounded-lg hover:opacity-90 transition-all shadow-md hover:shadow-lg"
-          >
-            <Plus className="h-5 w-5" />
-            <span className="font-medium">Krijo Kurs të Ri</span>
-          </button>
-          
-          <button
-            onClick={handleCreateAnnouncement}
-            className="flex items-center gap-2 border border-brown text-brown px-4 py-2 rounded-md hover:bg-brown/10 transition-colors"
-            disabled={courses.length === 0}
-          >
-            <Megaphone className="h-5 w-5" />
-            Krijo Njoftim
-          </button>
-        </div>
-      </div>
-      
       {/* Recent Courses */}
       <div className="mb-8">
         <h4 className="text-xl font-medium mb-4">Kurset e Fundit</h4>
