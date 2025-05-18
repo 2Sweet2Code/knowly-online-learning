@@ -59,7 +59,7 @@ export const DashboardSidebar = ({
         </li>
         <li>
           <NavLink 
-            to="questions" 
+            to="/dashboard/questions" 
             className={getNavLinkClass}
           >
             Pyetjet
