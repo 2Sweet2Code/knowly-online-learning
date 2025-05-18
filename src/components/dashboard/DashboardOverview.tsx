@@ -265,10 +265,10 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
                 console.error('onCreateCourseClick handler is not defined');
               }
             }}
-            className="flex items-center gap-2 bg-brown text-white px-4 py-2 rounded-md hover:bg-brown/90 transition-colors"
+            className="flex items-center gap-2 bg-gradient-to-r from-brown to-brown/90 text-white px-4 py-2.5 rounded-lg hover:opacity-90 transition-all shadow-md hover:shadow-lg"
           >
             <Plus className="h-5 w-5" />
-            Krijo Kurs të Ri
+            <span className="font-medium">Krijo Kurs të Ri</span>
           </button>
           
           <button

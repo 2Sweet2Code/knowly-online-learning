@@ -174,16 +174,19 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
 
       try {
         // Check if user is the instructor of this course
-        const { data: instructorData, error: instructorError } = await supabase
+        const { data: courseData, error: courseError } = await supabase
           .from('courses')
-          .select('instructor_id')
+          .select('instructor_id, allow_admin_applications')
           .eq('id', courseId)
           .single();
 
-        if (instructorError) throw instructorError;
+        if (courseError) {
+          console.error('Error fetching course data:', courseError);
+          throw courseError;
+        }
 
         // If user is the instructor, set as enrolled and instructor
-        if (instructorData?.instructor_id === user.id) {
+        if (courseData?.instructor_id === user.id) {
           setIsEnrolled(true);
           setIsInstructor(true);
           return;
@@ -197,7 +200,10 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
           .eq('course_id', courseId)
           .maybeSingle();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error checking enrollment:', error);
+          throw error;
+        }
 
         setIsEnrolled(!!data);
       } catch (error) {
@@ -211,7 +217,12 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
 
   const handleEnroll = async () => {
     if (!user?.id || !courseId) {
-      setError('You must be logged in to enroll in a course');
+      setError('Ju duhet të jeni të kyçur për t\'u regjistruar në një kurs');
+      return;
+    }
+    
+    if (!course) {
+      setError('Kursi nuk u gjet');
       return;
     }
 
@@ -257,13 +268,14 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
         queryKey: ['course', courseId, 'enrollments'] 
       });
       
-      toast({
-        title: 'Enrollment Successful',
-        description: 'You have successfully enrolled in the course.',
-      });
+      // Update local state
+      setIsEnrolled(true);
+      setShowEnrollForm(false);
       
-      // Refresh the page to update the UI
-      window.location.reload();
+      toast({
+        title: 'Regjistrimi u krye me sukses',
+        description: 'Ju jeni regjistruar me sukses në këtë kurs.',
+      });
       
     } catch (error) {
       console.error('Error enrolling in course:', error);

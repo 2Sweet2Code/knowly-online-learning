@@ -37,7 +37,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     try {
       // Get all enrolled students for this course
       const { data: enrolledStudents, error: enrollmentError } = await supabase
-        .from('enrollments')
+        .from('course_enrollments')
         .select('user_id')
         .eq('course_id', courseId);
       
@@ -66,28 +66,24 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       // Get existing grades with better error handling
       let grades = [];
       try {
-        // Use a type assertion for tables that might not be in the database schema yet
-        // Using type assertion for tables that might not be in the TypeScript definitions yet
-        const { data: gradesData, error: gradesError } = await (supabase as unknown as {
-          from: (table: string) => {
-            select: (columns: string) => {
-              eq: (column: string, value: string) => Promise<{ 
-                data: Array<{ id: string; user_id: string; course_id: string; grade: number | null; feedback: string | null }>; 
-                error: { message?: string } | null 
-              }>
-            }
+        // First check if the table exists
+        const { data: tableExists, error: tableCheckError } = await supabase
+          .rpc('table_exists', { table_name: 'student_grades' });
+          
+        if (tableExists) {
+          // Table exists, fetch grades
+          const { data: gradesData, error: gradesError } = await supabase
+            .from('student_grades')
+            .select('*')
+            .eq('course_id', courseId);
+            
+          if (gradesError) {
+            console.error('Error fetching grades:', gradesError);
+          } else {
+            grades = gradesData || [];
           }
-        })
-          .from('student_grades')
-          .select('*')
-          .eq('course_id', courseId);
-        
-        if (!gradesError) {
-          grades = gradesData || [];
-        } else if (gradesError.message?.includes('does not exist')) {
-          console.log('student_grades table does not exist yet, continuing without grades');
         } else {
-          console.error('Error fetching grades:', gradesError);
+          console.log('student_grades table does not exist yet, continuing without grades');
         }
       } catch (gradeErr) {
         // Try to get grades from localStorage as fallback
@@ -180,9 +176,13 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         // For new grades, use direct insert
         const { error } = await supabase
           .from('student_grades')
-          .insert([gradeData]);
+          .insert([gradeData])
+          .select();
           
-        if (error) throw error;
+        if (error) {
+          console.error('Error saving grade:', error);
+          throw error;
+        }
       } else {
         // For updates, use direct update
         const { error } = await supabase
@@ -190,12 +190,17 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
           .update({
             grade: grade !== null ? Number(grade) : null,
             feedback: feedback || null,
-            updated_by: user?.id
+            updated_by: user?.id,
+            updated_at: new Date().toISOString()
           })
           .eq('user_id', userId)
-          .eq('course_id', courseId);
+          .eq('course_id', courseId)
+          .select();
           
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating grade:', error);
+          throw error;
+        }
       }
       
       // Show success message
