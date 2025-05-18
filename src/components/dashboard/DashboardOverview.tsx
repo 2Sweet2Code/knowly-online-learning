@@ -9,13 +9,23 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { enUS as en, sq } from 'date-fns/locale';
 
-interface Announcement {
+interface Profile {
+  name: string;
+}
+
+interface DatabaseAnnouncement {
   id: string;
   title: string;
   content: string;
   created_at: string;
-  course_id: string | null;
-  course_title?: string;
+  course_id: string;
+  created_by: string;
+  profiles: Profile | null;
+}
+
+interface Announcement extends Omit<DatabaseAnnouncement, 'profiles'> {
+  course_title: string;
+  instructor_name: string;
 }
 
 interface DashboardOverviewProps {
@@ -98,19 +108,28 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
       // Get announcements for these courses
       const courseIds = instructorCourses.map(course => course.id);
       const { data: announcementsData, error: announcementsError } = await supabase
-        .from('announcements')
-        .select('*')
+        .from('course_announcements')
+        .select(`
+          *,
+          profiles (name)
+        `)
         .in('course_id', courseIds)
         .order('created_at', { ascending: false })
         .limit(5);
       
       if (announcementsError) throw announcementsError;
       
-      // Add course titles to announcements
-      return announcementsData.map(announcement => ({
-        ...announcement,
-        course_title: instructorCourses.find(c => c.id === announcement.course_id)?.title || 'General'
-      }));
+      // Add course titles and instructor names to announcements
+      return (announcementsData || []).map(announcement => {
+        const courseTitle = instructorCourses.find(c => c.id === announcement.course_id)?.title || 'General';
+        const instructorName = announcement.profiles?.name || 'Instructor';
+        
+        return {
+          ...announcement,
+          course_title: courseTitle,
+          instructor_name: instructorName
+        } as Announcement;
+      });
     },
     enabled: !!user?.id && courses.length > 0
   });

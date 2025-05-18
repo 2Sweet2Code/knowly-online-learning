@@ -166,101 +166,58 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         throw new Error('User ID not found');
       }
       
-      // Create a grade object
+      // Create a grade object with proper types
       const gradeData = {
         course_id: courseId,
         user_id: userId,
-        grade,
-        feedback,
+        grade: grade !== null ? Number(grade) : null,
+        feedback: feedback || null,
         updated_by: user?.id || ''
       };
       
       // Use direct database access with proper error handling
-      try {
-        if (isNew) {
-          // For new grades, use direct insert with type assertion
-          // Using type assertion for tables that might not be in the TypeScript definitions yet
-          const { error } = await (supabase as unknown as {
-            from: (table: string) => {
-              insert: (data: { user_id: string; course_id: string; grade: number | null; feedback: string | null; updated_by: string }) => 
-                Promise<{ error: { message?: string } | null }>
-            }
-          })
-            .from('student_grades')
-            .insert(gradeData);
-            
-          if (error) throw error;
-        } else {
-          // For updates, use direct update with type assertion
-          // Using type assertion for tables that might not be in the TypeScript definitions yet
-          const { error } = await (supabase as unknown as {
-            from: (table: string) => {
-              update: (data: { grade: number | null; feedback: string | null; updated_by: string | undefined }) => {
-                eq: (column: string, value: string) => Promise<{ error: { message?: string } | null }>
-              }
-            }
-          })
-            .from('student_grades')
-            .update({
-              grade,
-              feedback,
-              updated_by: user?.id
-            })
-            .eq('id', studentId);
-            
-          if (error) throw error;
-        }
-        
-        // Show success message
-        toast({
-          title: 'Nota u ruajt me sukses',
-          description: 'Nota dhe feedback-u u ruajtën me sukses.',
-          variant: 'default',
-        });
-        
-        // Refresh data
-        queryClient.invalidateQueries({ queryKey: ['enrollments'] });
-        queryClient.invalidateQueries({ queryKey: ['course', courseId] });
-        
-        // Refresh the component state
-        fetchStudentsWithGrades();
-      } catch (dbError: unknown) {
-        // If the table doesn't exist, use localStorage as fallback
-        const errorWithMessage = dbError as { message?: string };
-        if (errorWithMessage.message?.includes('does not exist')) {
-          console.log('Using localStorage fallback for grades');
+      if (isNew) {
+        // For new grades, use direct insert
+        const { error } = await supabase
+          .from('student_grades')
+          .insert([gradeData]);
           
-          if (isNew) {
-            const localGrades = JSON.parse(localStorage.getItem('student_grades') || '[]');
-            localGrades.push({
-              ...gradeData,
-              id: `local-${Date.now()}`,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
-            localStorage.setItem('student_grades', JSON.stringify(localGrades));
-          } else {
-            const localGrades = JSON.parse(localStorage.getItem('student_grades') || '[]');
-            const updatedGrades = localGrades.map((g: { id: string; grade?: number | null; feedback?: string | null; updated_at?: string }) => 
-              g.id === studentId ? { ...g, grade, feedback, updated_at: new Date().toISOString() } : g
-            );
-            localStorage.setItem('student_grades', JSON.stringify(updatedGrades));
-          }
+        if (error) throw error;
+      } else {
+        // For updates, use direct update
+        const { error } = await supabase
+          .from('student_grades')
+          .update({
+            grade: grade !== null ? Number(grade) : null,
+            feedback: feedback || null,
+            updated_by: user?.id
+          })
+          .eq('user_id', userId)
+          .eq('course_id', courseId);
           
-          toast({
-            title: 'Nota u ruajt lokalisht',
-            description: 'Nota u ruajt në shfletuesin tuaj. Administratori duhet të krijojë tabelën e notave në bazën e të dhënave.',
-            variant: 'default',
-          });
-        } else {
-          throw dbError;
-        }
+        if (error) throw error;
       }
+      
+      // Show success message
+      toast({
+        title: 'Nota u ruajt me sukses',
+        description: 'Nota dhe feedback-u u ruajtën me sukses.',
+        variant: 'default',
+      });
+      
+      // Refresh data
+      queryClient.invalidateQueries({ queryKey: ['enrollments'] });
+      queryClient.invalidateQueries({ queryKey: ['course', courseId] });
+      
+      // Refresh the component state
+      fetchStudentsWithGrades();
     } catch (error) {
       console.error('Error saving grade:', error);
+      
+      // Show error message
       toast({
-        title: 'Gabim gjatë ruajtjes së notës',
-        description: 'Ndodhi një gabim gjatë ruajtjes së notës. Ju lutemi provoni përsëri.',
+        title: 'Gabim',
+        description: 'Ndodhi një gabim gjatë ruajtjes së notës. Ju lutem provoni përsëri.',
         variant: 'destructive',
       });
     } finally {
