@@ -1,7 +1,20 @@
 import { useState, useEffect, Component, ErrorInfo, ReactNode } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { sq } from "date-fns/locale";
+import type { PostgrestError } from '@supabase/postgrest-js';
+import { useToast } from "@/components/ui/use-toast";
+import { Course } from "@/types";
+import type { Database } from '@/types/database.types';
+import { Header } from "../components/Header";
+import { Footer } from "../components/Footer";
+import { ClassmatesList } from "../components/ClassmatesList";
+import { StudentGradesList } from "../components/StudentGradesList";
+import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
 
 // Define a type for the course admin data
 interface CourseAdmin {
@@ -12,20 +25,6 @@ interface CourseAdmin {
   created_at?: string;
   updated_at?: string;
 }
-import { useAuth } from "../context/AuthContext";
-import { Loader2, MessageSquare, User, Clock, Users, AlertCircle, Home, GraduationCap, Bell, AlertTriangle } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { sq } from "date-fns/locale";
-import type { PostgrestError } from '@supabase/postgrest-js';
-import { useToast } from "@/hooks/use-toast";
-import { Course } from "@/types";
-import type { Database } from '@/integrations/supabase/types';
-import { Header } from "../components/Header";
-import { Footer } from "../components/Footer";
-import { ClassmatesList } from "../components/ClassmatesList";
-import { StudentGradesList } from "../components/StudentGradesList";
-import { AnnouncementModal } from "../components/dashboard/AnnouncementModal";
-import { CourseComment, getCourseComments, insertCourseComment } from "@/types/course-comments";
 
 // Error Boundary Types
 interface ErrorBoundaryProps {
@@ -103,27 +102,46 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-// CourseComment type is now imported from @/types/course-comments
+// Import CourseComment type from database types
+import type { CourseComment } from '@/types/database.types';
 
 interface CourseDetailPageProps {
   initialCourseData?: Course | null;
 }
 
 const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = {}) => {
-  const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'grades' | 'settings'>('stream');
+  // Navigation and routing
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  
+  // Hooks and context
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // UI state
+  const [tab, setTab] = useState<'stream' | 'content' | 'students' | 'grades' | 'settings'>('stream');
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Course enrollment state
   const [accessCode, setAccessCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [showEnrollForm, setShowEnrollForm] = useState(false);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  
+  // Comments state
   const [commentText, setCommentText] = useState("");
+  const [isCommenting, setIsCommenting] = useState(false);
   const [isPublicComment, setIsPublicComment] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  
+  // Admin state
+  const [isClassAdmin, setIsClassAdmin] = useState(false);
+  const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
+  const [adminCheckError, setAdminCheckError] = useState<PostgrestError | null>(null);
 
   // Fetch course details (use initialCourseData if provided)
   const { data: course, isLoading: queryLoading, error: queryError } = useQuery({
@@ -266,25 +284,28 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
 
   // Fetch course comments
   const { 
-    data: comments = [], 
+    data: courseComments = [], 
     isLoading: isLoadingComments,
     refetch: refetchComments
-  } = useQuery({
+  } = useQuery<CourseComment[]>({
     queryKey: ['courseComments', courseId],
     queryFn: async () => {
       if (!courseId) return [];
       
       try {
-        // Use the helper function for type-safe access to course_comments
-        const { data, error } = await getCourseComments(supabase, courseId);
-        
+        const { data, error } = await supabase
+          .from('course_comments')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false });
+
         if (error) throw error;
         return data || [];
       } catch (err) {
         console.error('Error fetching comments:', err);
         // Try to get comments from localStorage as fallback
         const localComments = localStorage.getItem(`course_comments_${courseId}`);
-        return localComments ? JSON.parse(localComments) : [];
+        return localComments ? JSON.parse(localComments) as CourseComment[] : [];
       }
     },
     enabled: !!courseId,
@@ -298,14 +319,16 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
     setIsSubmittingComment(true);
     
     try {
-      // Use the helper function for type-safe insertion
-      const { error } = await insertCourseComment(supabase, {
-        course_id: courseId,
-        user_id: user.id,
-        content: commentText,
-        is_public: isPublicComment,
-        created_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('course_comments')
+        .insert({
+          course_id: courseId,
+          user_id: user.id,
+          user_name: user.user_metadata?.full_name || user.email?.split('@')[0],
+          content: commentText,
+          is_public: isPublicComment,
+          created_at: new Date().toISOString()
+        });
       
       if (error) {
         console.error('Error submitting comment:', error);
@@ -359,10 +382,6 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
 
   const isInstructor = user?.id === course?.instructorId || user?.role === 'admin';
 
-  // Use state for admin status instead of a query to avoid type issues
-  const [isClassAdmin, setIsClassAdmin] = useState(false);
-  const [isCheckingAdminStatus, setIsCheckingAdminStatus] = useState(false);
-  
   // Check if Supabase client is initialized
   const isSupabaseInitialized = () => {
     if (!supabase) {
@@ -372,35 +391,24 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
     return true;
   };
 
-  // Simplified admin status check with direct query
+  // Admin status check with direct query
   useEffect(() => {
-    let isMounted = true;
-    
-    const checkAdminStatus = async () => {
-      if (!isSupabaseInitialized()) {
-        if (isMounted) {
-          setIsClassAdmin(false);
-          setIsCheckingAdminStatus(false);
-        }
-        return;
-      }
+    if (!user || !courseId) return;
 
-      if (!user?.id || !courseId) {
-        if (isMounted) setIsClassAdmin(false);
-        return;
-      }
-      
-      // If user is instructor, they are automatically an admin
-      if (isInstructor) {
-        if (isMounted) setIsClassAdmin(true);
-        return;
-      }
-      
+    let isMounted = true;
+
+    const checkAdminStatus = async () => {
       try {
+        // If user is instructor, they are automatically an admin
+        if (isInstructor) {
+          if (isMounted) setIsClassAdmin(true);
+          return;
+        }
+
         if (isMounted) setIsCheckingAdminStatus(true);
         
-        // Use a direct query instead of RPC to avoid potential function issues
-        const { data, error } = await supabase
+        // Direct query without complex type assertions
+        const result = await supabase
           .from('course_admins')
           .select('id')
           .eq('user_id', user.id)
@@ -410,28 +418,36 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
         
         if (!isMounted) return;
         
+        const { data, error } = result;
+        
+        if (!isMounted) return;
+        
         if (error) {
           console.error('Error checking admin status:', error);
-          setIsClassAdmin(false);
-        } else {
-          // If we have data, user is an admin
-          setIsClassAdmin(!!data);
+          setAdminCheckError(error);
+          return;
         }
+        
+        setIsClassAdmin(!!data?.id);
       } catch (err) {
         console.error('Error in admin status check:', err);
-        if (isMounted) setIsClassAdmin(false);
+        if (isMounted) {
+          setAdminCheckError(err as PostgrestError);
+        }
       } finally {
-        if (isMounted) setIsCheckingAdminStatus(false);
+        if (isMounted) {
+          setIsCheckingAdminStatus(false);
+        }
       }
     };
-    
+
     checkAdminStatus();
-    
+
     return () => {
       isMounted = false;
     };
-  }, [user?.id, courseId, isInstructor]);
-  // Define isStudent based on user role and admin status
+  }, [user, courseId, isInstructor, setIsClassAdmin, setIsCheckingAdminStatus, setAdminCheckError]);
+
   const isStudent = !!user && !isInstructor && user.role !== 'admin' && !isClassAdmin;
 
   if (queryLoading) {
@@ -545,9 +561,9 @@ const CourseDetailPageContent = ({ initialCourseData }: CourseDetailPageProps = 
                   <Loader2 className="h-5 w-5 animate-spin mr-2" />
                   <span>Duke ngarkuar komentet...</span>
                 </div>
-              ) : comments.length > 0 ? (
+              ) : courseComments.length > 0 ? (
                 <div className="space-y-4 mb-6">
-                  {comments.map(comment => (
+                  {courseComments.map(comment => (
                     <div key={comment.id} className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2">
