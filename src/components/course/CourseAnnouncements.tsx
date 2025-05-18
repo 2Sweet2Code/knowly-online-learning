@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { AnnouncementModal } from '../dashboard/AnnouncementModal';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { AnnouncementComments } from '../announcement/AnnouncementComments';
+import type { AnnouncementComment } from '@/types/database.types';
 
 type Profile = {
   name: string;
@@ -179,14 +181,14 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
           )}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {announcements.map((announcement) => (
             <div 
               key={announcement.id} 
               className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow"
             >
               <div className="flex justify-between items-start">
-                <div>
+                <div className="w-full">
                   <h3 className="text-xl font-semibold mb-2">{announcement.title}</h3>
                   <div className="flex items-center text-sm text-gray-500 mb-4">
                     <span>{announcement.instructor_name}</span>
@@ -197,9 +199,12 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
                     </div>
                   </div>
                   <div 
-                    className="prose max-w-none text-gray-700"
+                    className="prose max-w-none text-gray-700 mb-4"
                     dangerouslySetInnerHTML={{ __html: announcement.content }}
                   />
+                  
+                  {/* Comments section */}
+                  <AnnouncementComments announcementId={announcement.id} />
                 </div>
               </div>
             </div>

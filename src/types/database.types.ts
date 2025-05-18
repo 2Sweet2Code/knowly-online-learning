@@ -40,6 +40,19 @@ export type CourseAnnouncement = {
   created_by: string;
 };
 
+export type AnnouncementComment = {
+  id: string;
+  announcement_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  profiles?: {
+    name: string;
+    avatar_url: string | null;
+  } | null;
+};
+
 export type Tables<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Row'];
 export type InsertDto<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Insert'];
 export type UpdateDto<T extends keyof Database['public']['Tables']> = Database['public']['Tables'][T]['Update'];
@@ -67,6 +80,14 @@ export interface Database extends GeneratedDatabase {
         Row: CourseAnnouncement;
         Insert: Omit<CourseAnnouncement, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<CourseAnnouncement, 'id' | 'created_at' | 'course_id' | 'created_by'>> & {
+          id?: string;
+          updated_at?: string;
+        };
+      };
+      announcement_comments: {
+        Row: AnnouncementComment;
+        Insert: Omit<AnnouncementComment, 'id' | 'created_at' | 'updated_at' | 'profiles'>;
+        Update: Partial<Omit<AnnouncementComment, 'id' | 'created_at' | 'announcement_id' | 'user_id'>> & {
           id?: string;
           updated_at?: string;
         };
