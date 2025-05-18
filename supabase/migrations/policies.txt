@@ -1,9 +1,5 @@
 announcements
 
-Disable RLS
-
-Create policy
-
 INSERT
 
 
@@ -18,9 +14,6 @@ Applied to: authenticated role
 
 assignments
 
-Disable RLS
-
-Create policy
 
 SELECT
 
@@ -29,10 +22,6 @@ Combined assignments view policy
 Applied to: authenticated role
 
 course_admins
-
-Disable RLS
-
-Create policy
 
 DELETE
 
@@ -64,10 +53,6 @@ No policies created yet
 
 course_comments
 
-Disable RLS
-
-Create policy
-
 INSERT
 
 
@@ -94,10 +79,6 @@ Applied to: public role
 
 course_content
 
-Disable RLS
-
-Create policy
-
 INSERT
 
 
@@ -111,10 +92,6 @@ Enable read access for course members
 Applied to: authenticated role
 
 courses
-
-Disable RLS
-
-Create policy
 
 DELETE
 
@@ -142,10 +119,6 @@ Applied to: authenticated role
 
 enrollments
 
-Disable RLS
-
-Create policy
-
 SELECT
 
 
@@ -165,10 +138,6 @@ Users can update their own enrollments
 Applied to: public role
 
 profiles
-
-Disable RLS
-
-Create policy
 
 INSERT
 
@@ -190,9 +159,6 @@ Applied to: authenticated role
 
 questions
 
-Disable RLS
-
-Create policy
 
 UPDATE
 
@@ -220,9 +186,6 @@ Applied to: public role
 
 student_grades
 
-Disable RLS
-
-Create policy
 
 ALL
 
