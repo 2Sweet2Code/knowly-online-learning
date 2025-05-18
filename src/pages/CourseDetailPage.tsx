@@ -39,23 +39,6 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
 
-  // Add a timeout to prevent infinite loading
-  useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    
-    if (courseId && queryLoading) {
-      timeoutId = setTimeout(() => {
-        // If still loading after 10 seconds, force reload the page
-        console.log('Loading timeout reached, reloading page...');
-        window.location.reload();
-      }, 10000);
-    }
-    
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [courseId, queryLoading]);
-  
   // Fetch course details (use initialCourseData if provided)
   const { data: course, isLoading: queryLoading, error: queryError } = useQuery({
     initialData: initialCourseData || undefined,
@@ -235,6 +218,7 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
         user_id: user.id,
         content: commentText,
         is_public: isPublicComment,
+        created_at: new Date().toISOString()
       });
       
       if (error) {
@@ -306,8 +290,24 @@ const CourseDetailPage = ({ initialCourseData }: CourseDetailPageProps = {}) => 
     // Simple function to check admin status
     const checkAdminStatus = async () => {
       try {
-        // Direct database query to check admin status
-        const { data, error } = await supabase
+        // Direct database query to check admin status with type assertion
+        // Using a type assertion to avoid deep type instantiation issues
+        const { data, error } = await (supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: string) => {
+                eq: (column: string, value: string) => {
+                  eq: (column: string, value: string) => {
+                    limit: (n: number) => Promise<{
+                      data: Array<{id: string}> | null;
+                      error: { message?: string } | null;
+                    }>
+                  }
+                }
+              }
+            }
+          }
+        })
           .from('course_admins')
           .select('id')
           .eq('course_id', courseId)

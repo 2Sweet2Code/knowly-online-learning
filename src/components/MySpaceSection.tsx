@@ -55,14 +55,25 @@ export const MySpaceSection = () => {
         // Try direct table query first
         try {
           // Use a type assertion to handle the table that might not be in the TypeScript definitions
-          const { data: directGrades, error: directError } = await supabase
-            .from('student_grades' as any)
+          const { data: directGrades, error: directError } = await (supabase as unknown as {
+            from: (table: string) => {
+              select: (columns: string) => {
+                eq: (column: string, value: string) => {
+                  in: (column: string, values: string[]) => Promise<{
+                    data: Array<{course_id: string; grade: number | null; feedback: string | null}> | null;
+                    error: { message?: string } | null;
+                  }>
+                }
+              }
+            }
+          })
+            .from('student_grades')
             .select('course_id, grade, feedback')
             .eq('user_id', user.id)
             .in('course_id', enrolledCourseIds);
             
           if (!directError && directGrades && Array.isArray(directGrades)) {
-            grades = directGrades as any;
+            grades = directGrades;
             console.log('Successfully fetched grades via direct query');
           }
         } catch (directQueryError) {

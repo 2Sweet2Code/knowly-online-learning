@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -30,29 +30,30 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const queryClient = useQueryClient();
 
   // Function to fetch students and their grades
-  const fetchStudentsWithGrades = async () => {
+  const fetchStudentsWithGrades = useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // First get all enrollments for this course
-      const { data: enrollments, error: enrollmentsError } = await supabase
+      // Get all enrolled students for this course
+      const { data: enrolledStudents, error: enrollmentError } = await supabase
         .from('enrollments')
-        .select('user_id, course_id')
+        .select('user_id')
         .eq('course_id', courseId);
       
-      if (enrollmentsError) {
-        throw enrollmentsError;
+      if (enrollmentError) {
+        throw enrollmentError;
       }
       
-      if (!enrollments || !enrollments.length) {
+      // Extract user IDs
+      const userIds = enrolledStudents.map(enrollment => enrollment.user_id);
+      
+      if (userIds.length === 0) {
         setStudents([]);
-        setLoading(false);
         return;
       }
       
-      // Get all student profiles
-      const userIds = enrollments.map(e => e.user_id);
+      // Get user profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, name, role')
@@ -65,8 +66,18 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       // Get existing grades with better error handling
       let grades = [];
       try {
-        // Use any type to bypass TypeScript's strict checking
-        const { data: gradesData, error: gradesError } = await (supabase as any)
+        // Use a type assertion for tables that might not be in the database schema yet
+        // Using type assertion for tables that might not be in the TypeScript definitions yet
+        const { data: gradesData, error: gradesError } = await (supabase as unknown as {
+          from: (table: string) => {
+            select: (columns: string) => {
+              eq: (column: string, value: string) => Promise<{ 
+                data: Array<{ id: string; user_id: string; course_id: string; grade: number | null; feedback: string | null }>; 
+                error: { message?: string } | null 
+              }>
+            }
+          }
+        })
           .from('student_grades')
           .select('*')
           .eq('course_id', courseId);
@@ -79,21 +90,26 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
           console.error('Error fetching grades:', gradesError);
         }
       } catch (gradeErr) {
-        console.error('Unexpected error fetching grades:', gradeErr);
-        // Continue without grades
+        // Try to get grades from localStorage as fallback
+        console.log('Using localStorage fallback for grades');
+        const localGrades = localStorage.getItem('student_grades');
+        if (localGrades) {
+          const parsedGrades = JSON.parse(localGrades);
+          grades = parsedGrades.filter(g => g.course_id === courseId);
+        }
       }
       
-      // Combine the data
-      const studentsWithGrades = profiles.map(profile => {
-        const grade = grades?.find(g => g.user_id === profile.id) || null;
-        
+      // Combine profiles with grades using type assertion to handle potential type issues
+      const typedProfiles = profiles as Array<{ id: string; name?: string; role?: string }>;
+      const studentsWithGrades = typedProfiles.map(profile => {
+        const studentGrade = grades.find(g => g.user_id === profile.id);
         return {
-          id: grade?.id || `new-${profile.id}`,
+          id: studentGrade?.id || `temp-${profile.id}`,
           user_id: profile.id,
           course_id: courseId,
-          grade: grade?.grade || null,
-          feedback: grade?.feedback || null,
-          name: profile.name || 'Student',
+          grade: studentGrade?.grade || null,
+          feedback: studentGrade?.feedback || null,
+          name: profile.name || 'Unknown',
           role: profile.role || 'student'
         };
       });
@@ -105,11 +121,13 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [courseId]);
   
   useEffect(() => {
-    fetchStudentsWithGrades();
-  }, [courseId]);
+    if (courseId) {
+      fetchStudentsWithGrades();
+    }
+  }, [courseId, fetchStudentsWithGrades]);
   
   const handleGradeChange = (userId: string, value: string) => {
     // Convert to number or null
@@ -157,15 +175,28 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       // Use direct database access with proper error handling
       try {
         if (isNew) {
-          // For new grades, use direct insert
-          const { error } = await (supabase as any)
+          // For new grades, use direct insert with type assertion
+          // Using type assertion for tables that might not be in the TypeScript definitions yet
+          const { error } = await (supabase as unknown as {
+            from: (table: string) => {
+              insert: (data: { user_id: string; course_id: string; grade: number | null; feedback: string | null; updated_by: string }) => 
+                Promise<{ error: { message?: string } | null }>
+            }
+          })
             .from('student_grades')
             .insert(gradeData);
             
           if (error) throw error;
         } else {
-          // For updates, use direct update
-          const { error } = await (supabase as any)
+          // For updates, use direct update with type assertion
+          // Using type assertion for tables that might not be in the TypeScript definitions yet
+          const { error } = await (supabase as unknown as {
+            from: (table: string) => {
+              update: (data: { grade: number | null; feedback: string | null; updated_by: string | undefined }) => {
+                eq: (column: string, value: string) => Promise<{ error: { message?: string } | null }>
+              }
+            }
+          })
             .from('student_grades')
             .update({
               grade,
@@ -190,9 +221,10 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         
         // Refresh the component state
         fetchStudentsWithGrades();
-      } catch (dbError: any) {
+      } catch (dbError: unknown) {
         // If the table doesn't exist, use localStorage as fallback
-        if (dbError.message?.includes('does not exist')) {
+        const errorWithMessage = dbError as { message?: string };
+        if (errorWithMessage.message?.includes('does not exist')) {
           console.log('Using localStorage fallback for grades');
           
           if (isNew) {
@@ -206,7 +238,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
             localStorage.setItem('student_grades', JSON.stringify(localGrades));
           } else {
             const localGrades = JSON.parse(localStorage.getItem('student_grades') || '[]');
-            const updatedGrades = localGrades.map((g: any) => 
+            const updatedGrades = localGrades.map((g: { id: string; grade?: number | null; feedback?: string | null; updated_at?: string }) => 
               g.id === studentId ? { ...g, grade, feedback, updated_at: new Date().toISOString() } : g
             );
             localStorage.setItem('student_grades', JSON.stringify(updatedGrades));
