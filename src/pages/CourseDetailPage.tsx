@@ -194,7 +194,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
 
         // Check if user is enrolled
         const { data, error } = await supabase
-          .from('course_enrollments')
+          .from('enrollments')
           .select('*')
           .eq('user_id', user.id)
           .eq('course_id', courseId)
@@ -249,7 +249,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     
     try {
       const { data, error } = await supabase
-        .from('course_enrollments')
+        .from('enrollments')
         .insert({
           user_id: user.id,
           course_id: courseId,

@@ -37,7 +37,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     try {
       // Get all enrolled students for this course
       const { data: enrolledStudents, error: enrollmentError } = await supabase
-        .from('course_enrollments')
+        .from('enrollments')
         .select('user_id')
         .eq('course_id', courseId);
       
