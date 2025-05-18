@@ -262,7 +262,7 @@ export const AnnouncementComments = ({ announcementId }: AnnouncementCommentsPro
     <div className="mt-4">
       <button
         onClick={toggleComments}
-        className="flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-md"
       >
         {isExpanded ? (
           <>
