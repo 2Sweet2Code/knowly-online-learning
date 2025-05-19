@@ -1,23 +1,135 @@
-import { useState, useEffect } from "react";
-import { useParams, Routes, Route, NavLink, Outlet, Navigate } from "react-router-dom";
+import { useState } from "react";
+import { useParams, Routes, Route, NavLink, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Course, Announcement } from "@/types";
+import type { Course, Announcement } from "@/types";
 import { Loader2, AlertCircle, Users, LayoutList, Settings, Megaphone } from "lucide-react";
 import { Header } from "@/components/Header"; 
 import { Footer } from "@/components/Footer";
 import { formatDistanceToNow } from "date-fns";
 import { sq } from "date-fns/locale";
 import { AnnouncementModal } from "@/components/dashboard/AnnouncementModal";
-import { useAuth } from "@/context/AuthContext";
+import type { Database } from '@/types/supabase';
 
-// --- Course Stream Component --- 
-const CourseStream = () => {
+const CourseStudents = () => {
+  const { courseId } = useParams<{ courseId: string }>();
+  const { data: students, isLoading, error } = useQuery({
+    queryKey: ['courseStudents', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      const { data, error } = await supabase
+        .from('course_enrollments')
+        .select('*, profiles!profiles_id_fkey(*)')
+        .eq('course_id', courseId);
+
+      if (error) {
+        console.error("Error fetching course students:", error);
+        throw error;
+      }
+
+      return data || [];
+    },
+    enabled: !!courseId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-brown mx-auto" />
+        <p className="mt-2 text-gray-600">Po ngarkohen studentët...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-4 text-red-500">
+        <AlertCircle className="h-6 w-6 mx-auto mb-2" />
+        <p>Ndodhi një gabim gjatë ngarkimit të studentëve.</p>
+      </div>
+    );
+  }
+
+  if (!students || students.length === 0) {
+    return (
+      <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
+        <Users className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+        <p className="text-gray-600">Nuk ka studentë të regjistruar për këtë kurs ende.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold font-playfair mb-4">Studentët</h2>
+      <div className="space-y-4">
+        {students.map((student) => (
+          <div key={student.id} className="p-4 border rounded-md shadow-sm bg-white">
+            <div className="flex items-center">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-brown-dark truncate">
+                  {student.profiles.name}
+                </p>
+                <p className="text-sm text-gray-500 truncate">
+                  {student.profiles.email}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CourseAssignments = () => <div>Assignments/Content Area</div>;
+const CourseSettings = () => <div>Course Settings Content</div>;
+
+const CourseManagementPage = () => {
   const { courseId } = useParams<{ courseId: string }>();
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
-  const { user } = useAuth();
 
-  const { data: announcements = [], isLoading, error } = useQuery<Announcement[]>({
+  // Fetch course details
+  const { data: course, isLoading, error } = useQuery<Course | null>({
+    queryKey: ['course', courseId],
+    queryFn: async () => {
+      if (!courseId) return null;
+      
+      const { data: supabaseData, error: supabaseError } = await supabase
+        .from('courses') 
+        .select('*')
+        .eq('id', courseId)
+        .single();
+
+      if (supabaseError) {
+        console.error("Error fetching course details:", supabaseError);
+        throw new Error("Failed to fetch course details.");
+      }
+      
+      if (!supabaseData) {
+        return null;
+      }
+
+      // Transform data to match Course type
+      return {
+        ...supabaseData,
+        instructorId: supabaseData.instructor_id,
+        category: supabaseData.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+        isPaid: !!supabaseData.is_paid,
+        accessCode: supabaseData.access_code,
+        allowAdminApplications: supabaseData.allow_admin_applications,
+      } as Course;
+    },
+    enabled: !!courseId,
+  });
+
+  // Fetch announcements
+  const { 
+    data: announcements = [], 
+    isLoading: isAnnouncementsLoading, 
+    error: announcementsError 
+  } = useQuery<Announcement[]>({
     queryKey: ['courseAnnouncements', courseId],
     queryFn: async () => {
       if (!courseId) return [];
@@ -31,233 +143,21 @@ const CourseStream = () => {
       if (error) {
         console.error("Error fetching course announcements:", error);
         if (error.code === '42P01') { 
-          const localAnnouncements = JSON.parse(localStorage.getItem(`announcements_${courseId}`) || '[]');
+          const localAnnouncements = JSON.parse(
+            localStorage.getItem(`announcements_${courseId}`) || '[]'
+          );
           return localAnnouncements;
-        } else {
-          throw new Error("Failed to fetch course announcements.");
         }
+        throw new Error("Failed to fetch course announcements.");
       }
       
       return data || [];
     },
     enabled: !!courseId,
   });
-  
+
   const handleOpenModal = () => setIsAnnouncementModalOpen(true);
   const handleCloseModal = () => setIsAnnouncementModalOpen(false);
-
-  return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold font-playfair">Njoftime</h2>
-        <button className="btn btn-primary btn-sm" onClick={handleOpenModal}>
-          Publiko Njoftim
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center items-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-brown" />
-          <span className="ml-2 text-gray-600">Loading announcements...</span>
-        </div>
-      ) : error ? (
-        <div className="text-center py-4 text-red-500">
-          <AlertCircle className="h-6 w-6 mx-auto mb-2" />
-          {(error as Error).message}
-        </div>
-      ) : announcements.length === 0 ? (
-        <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
-          <Megaphone className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-600">Nuk ka njoftime për këtë kurs ende.</p>
-          <p className="text-sm text-gray-500 mt-1">Kliko "Publiko Njoftim" për të shtuar të parin.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {announcements.map((announcement) => (
-            <div key={announcement.id} className="p-4 border rounded-md shadow-sm bg-white">
-              <h3 className="font-semibold text-brown-dark mb-1">{announcement.title}</h3>
-              <p className="text-gray-700 mb-2 text-sm">{announcement.content}</p>
-              <p className="text-xs text-gray-500">
-                Publikuar {formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true, locale: sq })}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      <AnnouncementModal 
-        isOpen={isAnnouncementModalOpen} 
-        onClose={handleCloseModal} 
-        courseId={courseId}
-      />
-    </div>
-  );
-};
-
-import type { Database } from '@/types/supabase';
-
-const CourseStudents = () => {
-  const { courseId } = useParams<{ courseId: string }>();
-  const { user } = useAuth();
-
-  // Fetch course details to get instructor_id
-  const { data: course, isLoading: courseLoading } = useQuery<{ instructor_id: string } | null>({
-    queryKey: ['course', courseId],
-    queryFn: async () => {
-      if (!courseId) return null;
-      const { data, error } = await supabase
-        .from('courses')
-        .select('instructor_id')
-        .eq('id', courseId)
-        .single();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!courseId,
-  });
-
-  // Fetch all enrolled students (excluding instructor)
-  // Define the type for the join query result
-  type EnrollmentWithProfile = {
-    user_id: string;
-    profiles: {
-      id: string;
-      name: string | null;
-      role: string | null;
-    } | null;
-  };
-  const {
-    data: students,
-    isLoading: studentsLoading,
-    error: studentsError,
-  } = useQuery<Array<{ id: string; name: string | null; role: string | null }>>({
-    queryKey: ['courseStudents', courseId],
-    queryFn: async () => {
-      if (!courseId) return [];
-      const { data, error } = await supabase
-        .from('enrollments')
-        .select('user_id, profiles (id, name, role)')
-        .eq('course_id', courseId);
-      if (error) throw error;
-      const instructorId = course?.instructor_id;
-      // Define a type for the data that includes the possibility of a SelectQueryError
-      type EnrollmentData = {
-        user_id: string;
-        profiles: { id?: string; name?: string | null; role?: string | null; error?: boolean } | null;
-      };
-      
-      // Cast the data to unknown first, then to our flexible type
-      const enrollments = data as unknown as EnrollmentData[];
-      
-      // Use a more flexible approach to handle the data
-      return (enrollments || []).filter((enr) => {
-        // Check if this is a valid enrollment with a user_id that's not the instructor
-        return enr && enr.user_id && enr.user_id !== instructorId;
-      }).map((enr) => {
-        // Try to extract profile data safely
-        const profile = enr.profiles && typeof enr.profiles === 'object' && !enr.profiles.error
-          ? enr.profiles
-          : null;
-          
-        return {
-          id: profile?.id || enr.user_id,
-          name: profile?.name || 'Unknown User',
-          role: profile?.role || 'student'
-        };
-      });
-    },
-    enabled: !!courseId && !!course,
-  });
-
-  if (courseLoading || studentsLoading) {
-    return (
-      <div className="flex justify-center items-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin text-brown" />
-        <span className="ml-2 text-gray-600">Loading students...</span>
-      </div>
-    );
-  }
-
-  if (studentsError) {
-    return (
-      <div className="text-center py-4 text-red-500">
-        <AlertCircle className="h-6 w-6 mx-auto mb-2" />
-        {(studentsError as Error).message}
-      </div>
-    );
-  }
-
-  const isInstructor = user?.id && course?.instructor_id && user.id === course.instructor_id;
-
-  return (
-    <div className="max-w-2xl mx-auto">
-      <h2 className="text-xl font-semibold font-playfair mb-4 flex items-center">
-        <Users className="h-5 w-5 mr-2" />
-        Studentët e Kursit
-        {isInstructor && (
-          <span className="ml-3 text-base text-gray-500">({Array.isArray(students) ? students.length : 0})</span>
-        )}
-      </h2>
-      {(!Array.isArray(students) || students.length === 0) ? (
-        <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
-          <Users className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-600">Nuk ka studentë të regjistruar në këtë kurs ende.</p>
-        </div>
-      ) : (
-        <ul className="divide-y divide-gray-200 bg-white rounded-lg shadow-sm">
-          {(students ?? []).map((student) => (
-            <li key={student.id} className="py-3 px-4 flex items-center">
-              <span className="font-medium text-brown-dark">{student.name || 'Emër i panjohur'}</span>
-              <span className="ml-2 text-xs text-gray-500">({student.role})</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
-const CourseAssignments = () => <div>Assignments/Content Area</div>; // Example section
-const CourseSettings = () => <div>Course Settings Content</div>; 
-
-const CourseManagementPage = () => {
-  const { courseId } = useParams<{ courseId: string }>();
-
-  // Fetch course details
-  const { data: course, isLoading, error } = useQuery<Course | null>({
-    queryKey: ['course', courseId],
-    queryFn: async () => {
-      if (!courseId) return null;
-      
-      // Example using Supabase:
-      const { data: supabaseData, error: supabaseError } = await supabase
-        .from('courses') 
-        .select('*')
-        .eq('id', courseId)
-        .single();
-
-      if (supabaseError) {
-        console.error("Error fetching course details:", supabaseError);
-        throw new Error("Failed to fetch course details.");
-      }
-      
-      if (!supabaseData) {
-        return null; // Or handle as not found
-      }
-
-      // Transform data to match Course type
-      const transformedData: Course = {
-        ...supabaseData,
-        instructorId: supabaseData.instructor_id, // Map instructor_id to instructorId
-        // Ensure other properties match or handle potential mismatches
-        // Example: Ensure category is one of the allowed literals
-        category: supabaseData.category as 'programim' | 'dizajn' | 'marketing' | 'other',
-        status: supabaseData.status as 'active' | 'draft'
-      };
-
-      return transformedData;
-    },
-    enabled: !!courseId,
-  });
 
   if (isLoading) {
     return (
@@ -305,11 +205,6 @@ const CourseManagementPage = () => {
             <nav className="w-full lg:w-64 flex-shrink-0 bg-white p-4 rounded-lg border border-lightGray shadow-sm h-fit">
               <ul className="space-y-1">
                 <li>
-                  <NavLink to="stream" className={getNavLinkClass} end>
-                    <Megaphone className="mr-3 h-5 w-5" /> Stream
-                  </NavLink>
-                </li>
-                <li>
                   <NavLink to="assignments" className={getNavLinkClass}>
                     <LayoutList className="mr-3 h-5 w-5" /> Përmbajtja
                   </NavLink>
@@ -329,14 +224,60 @@ const CourseManagementPage = () => {
 
             {/* Main Content Area for Nested Routes */}
             <div className="flex-grow bg-white p-6 rounded-lg border border-lightGray shadow-sm">
+              <div className="mb-8">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-semibold font-playfair">Njoftime</h2>
+                  <button className="btn btn-primary btn-sm" onClick={handleOpenModal}>
+                    Publiko Njoftim
+                  </button>
+                </div>
+
+                {isAnnouncementsLoading ? (
+                  <div className="flex justify-center items-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-brown" />
+                    <span className="ml-2 text-gray-600">Duke ngarkuar njoftimet...</span>
+                  </div>
+                ) : announcementsError ? (
+                  <div className="text-center py-4 text-red-500">
+                    <AlertCircle className="h-6 w-6 mx-auto mb-2" />
+                    {(announcementsError as Error).message}
+                  </div>
+                ) : announcements.length === 0 ? (
+                  <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
+                    <Megaphone className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-600">Nuk ka njoftime për këtë kurs ende.</p>
+                    <p className="text-sm text-gray-500 mt-1">Kliko "Publiko Njoftim" për të shtuar të parin.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {announcements.map((announcement) => (
+                      <div key={announcement.id} className="p-4 border rounded-md shadow-sm bg-white">
+                        <h3 className="font-semibold text-brown-dark mb-1">{announcement.title}</h3>
+                        <p className="text-gray-700 mb-2 text-sm">{announcement.content}</p>
+                        <p className="text-xs text-gray-500">
+                          Publikuar {formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true, locale: sq })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <AnnouncementModal 
+                  isOpen={isAnnouncementModalOpen} 
+                  onClose={handleCloseModal} 
+                  courseId={courseId || ''}
+                />
+              </div>
+
               <Routes>
-                <Route index element={<Navigate to="stream" replace />} />
-                <Route path="stream" element={<CourseStream />} />
+                <Route index element={<Navigate to="assignments" replace />} />
                 <Route path="assignments" element={<CourseAssignments />} />
                 <Route path="students" element={<CourseStudents />} />
                 <Route path="settings" element={<CourseSettings />} />
-                <Route path="*" element={<Navigate to="stream" replace />} /> 
+                <Route path="*" element={<Navigate to="assignments" replace />} />
               </Routes>
+
+
             </div>
           </div>
         </div>

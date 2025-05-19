@@ -136,7 +136,7 @@ const App = () => {
                   <Route index element={<DashboardOverview />} />
                   <Route path="courses">
                     <Route index element={<DashboardCourses />} />
-                    <Route path=":courseId/*" element={<CourseManagementPage />} />
+                    <Route path=":courseId" element={<CourseManagementPage />} />
                   </Route>
                   <Route path="students" element={<DashboardStudents />} />
                   {/* Temporarily comment out DashboardQuestions route */}

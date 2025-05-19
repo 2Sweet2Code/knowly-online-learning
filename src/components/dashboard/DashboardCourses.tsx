@@ -94,7 +94,7 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
   };
 
   const handleManageCourse = (courseId: string) => {
-    navigate(`/courses/${courseId}`);
+    navigate(`/courses/${courseId}/manage`);
   };
   
   const handleEditCourse = (course: Course) => {
