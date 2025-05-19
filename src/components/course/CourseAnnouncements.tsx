@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Megaphone, Clock } from 'lucide-react';
+import { Loader2, Megaphone, Clock, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { enUS as en, sq } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -42,7 +42,9 @@ interface CourseAnnouncementsProps {
 export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnouncementsProps) => {
   const { toast } = useToast();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
+  const [announcementToDelete, setAnnouncementToDelete] = useState<string | null>(null);
 
   const fetchAnnouncements = async (): Promise<Announcement[]> => {
     if (!courseId) return [];
@@ -126,6 +128,51 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
     });
   };
 
+  // Delete announcement mutation
+  const deleteAnnouncement = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('course_announcements')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (deletedId) => {
+      queryClient.setQueryData<Announcement[]>(['courseAnnouncements', courseId], (old) => 
+        old?.filter(a => a.id !== deletedId) || []
+      );
+      setAnnouncementToDelete(null);
+      toast({
+        title: 'Success',
+        description: 'Announcement deleted successfully',
+      });
+    },
+    onError: (error: Error) => {
+      console.error('Error deleting announcement:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete announcement',
+        variant: 'destructive',
+      });
+    }
+  });
+
+  const handleDeleteClick = (id: string) => {
+    setAnnouncementToDelete(id);
+  };
+
+  const confirmDelete = () => {
+    if (announcementToDelete) {
+      deleteAnnouncement.mutate(announcementToDelete);
+    }
+  };
+
+  const cancelDelete = () => {
+    setAnnouncementToDelete(null);
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-8">
@@ -187,8 +234,8 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
               key={announcement.id} 
               className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow"
             >
-              <div className="flex justify-between items-start">
-                <div className="w-full">
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex-1">
                   <h3 className="text-xl font-semibold mb-2">{announcement.title}</h3>
                   <div className="flex items-center text-sm text-gray-500 mb-4">
                     <span>{announcement.instructor_name}</span>
@@ -205,6 +252,26 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
                   
                   {/* Comments section */}
                   <AnnouncementComments announcementId={announcement.id} />
+                  
+                  {/* Delete button (only for instructor who created the announcement) */}
+                  {isInstructor && announcement.created_by === user?.id && (
+                    <div className="mt-4 flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                        onClick={() => handleDeleteClick(announcement.id)}
+                        disabled={deleteAnnouncement.isPending}
+                      >
+                        {deleteAnnouncement.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 mr-2" />
+                        )}
+                        Delete Announcement
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -217,6 +284,38 @@ export const CourseAnnouncements = ({ courseId, isInstructor }: CourseAnnounceme
         onClose={() => setIsAnnouncementModalOpen(false)}
         courseId={courseId}
       />
+
+      {/* Delete Confirmation Dialog */}
+      {announcementToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Delete Announcement</h3>
+            <p className="mb-6">Are you sure you want to delete this announcement? This action cannot be undone.</p>
+            
+            <div className="flex justify-end space-x-3">
+              <Button 
+                variant="outline" 
+                onClick={cancelDelete}
+                disabled={deleteAnnouncement.isPending}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={confirmDelete}
+                disabled={deleteAnnouncement.isPending}
+              >
+                {deleteAnnouncement.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : 'Delete'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
