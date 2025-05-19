@@ -1,214 +1,165 @@
 
-import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Course } from "../types";
 import { useQuery } from "@tanstack/react-query";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, BookOpen } from "lucide-react";
 
-interface EnrolledCourse extends Course {
-  progress: number;
-  completed: boolean;
-  grade?: number | null;
-  feedback?: string | null;
+interface Course {
+  id: string;
+  title: string;
+  description: string | null;
+  image: string | null;
+  category: 'programim' | 'dizajn' | 'marketing' | 'other';
+  instructor: string;
+  instructor_id: string;
+  status: 'active' | 'draft';
+}
+
+interface EnrollmentWithCourse {
+  course_id: string;
+  courses: Course[] | null;
+}
+
+interface Grade {
+  course_id: string;
+  grade: number | null;
+  feedback: string | null;
+}
+
+type EnrolledCourse = Course & {
+  grade: number | null;
+  feedback: string | null;
 }
 
 export const MySpaceSection = () => {
   const { user } = useAuth();
   
-  const { data: enrolledCourses = [], isLoading } = useQuery({
+  const { data: enrolledCourses = [], isLoading } = useQuery<EnrolledCourse[]>({
     queryKey: ['enrollments', user?.id],
     queryFn: async () => {
       if (!user) return [];
       
-      // First get user enrollments
-      const { data: enrollments, error: enrollmentsError } = await supabase
+      // Get user enrollments with course details
+      const { data: enrollments, error } = await supabase
         .from('enrollments')
-        .select('*')
-        .eq('user_id', user.id);
-      
-      if (enrollmentsError) {
-        console.error('Error fetching enrollments:', enrollmentsError);
-        return [];
-      }
-      
-      if (!enrollments.length) return [];
-      
-      // Then get course details for each enrollment
-      const enrolledCourseIds = enrollments.map(e => e.course_id);
-      
-      const { data: courses, error: coursesError } = await supabase
-        .from('courses')
-        .select('*')
-        .in('id', enrolledCourseIds);
-      
-      if (coursesError) {
-        console.error('Error fetching enrolled courses:', coursesError);
-        return [];
-      }
-      
-      // Get grades if available
-      let grades: Array<{course_id: string; grade: number | null; feedback: string | null}> = [];
-      
-      try {
-        // Try direct table query first
-        try {
-          // Use a type assertion to handle the table that might not be in the TypeScript definitions
-          const { data: directGrades, error: directError } = await (supabase as unknown as {
-            from: (table: string) => {
-              select: (columns: string) => {
-                eq: (column: string, value: string) => {
-                  in: (column: string, values: string[]) => Promise<{
-                    data: Array<{course_id: string; grade: number | null; feedback: string | null}> | null;
-                    error: { message?: string } | null;
-                  }>
-                }
-              }
-            }
-          })
-            .from('student_grades')
-            .select('course_id, grade, feedback')
-            .eq('user_id', user.id)
-            .in('course_id', enrolledCourseIds);
-            
-          if (!directError && directGrades && Array.isArray(directGrades)) {
-            grades = directGrades;
-            console.log('Successfully fetched grades via direct query');
-          }
-        } catch (directQueryError) {
-          console.log('Direct query failed:', directQueryError);
-          // Continue to fallback approach
-        }
-        
-        // Fallback to localStorage if no grades from direct query
-        if (grades.length === 0) {
-          const localGrades = localStorage.getItem(`student_grades_${user.id}`);
-          if (localGrades) {
-            try {
-              const parsedGrades = JSON.parse(localGrades);
-              if (Array.isArray(parsedGrades)) {
-                grades = parsedGrades;
-                console.log('Successfully fetched grades from localStorage');
-              }
-            } catch (e) {
-              console.error('Error parsing local grades:', e);
-            }
-          }
-        }
-        
-      } catch (error) {
-        console.error('Error in grades fetching flow:', error);
-        // Continue without grades if all approaches fail
-      }
-      
-      // Map enrollments with courses and grades
-      return courses.map(course => {
-        const enrollment = enrollments.find(e => e.course_id === course.id);
-        const grade = grades.find(g => g.course_id === course.id);
-        
-        return {
-          id: course.id,
-          title: course.title,
-          description: course.description,
-          image: course.image,
-          category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
-          instructor: course.instructor,
-          instructorId: course.instructor_id,
-          students: course.students || 0,
-          status: course.status as 'active' | 'draft',
-          progress: enrollment?.progress || 0,
-          completed: enrollment?.completed || false,
-          grade: grade?.grade || null,
-          feedback: grade?.feedback || null,
+        .select('course_id, courses(*)')
+        .eq('user_id', user.id) as { 
+          data: Array<{ course_id: string; courses: Course[] }> | null; 
+          error: Error | null 
         };
+      
+      if (error) {
+        console.error('Error fetching enrolled courses:', error);
+        return [];
+      }
+      
+      if (!enrollments?.length) return [];
+      
+      // Get grades for all enrolled courses
+      const courseIds = enrollments.map(item => item.course_id);
+      const { data: gradesData } = await supabase
+        .from('student_grades')
+        .select('course_id, grade, feedback')
+        .eq('user_id', user.id)
+        .in('course_id', courseIds);
+      
+      // Map the data to the expected format
+      return enrollments.flatMap(enrollment => {
+        if (!enrollment.courses || !enrollment.courses.length) return [];
+        
+        return enrollment.courses.map(course => ({
+          ...course,
+          grade: gradesData?.find(g => g.course_id === course.id)?.grade || null,
+          feedback: gradesData?.find(g => g.course_id === course.id)?.feedback || null,
+        }));
       });
     },
     enabled: !!user
   });
 
-  return (
-    <section id="my-space" className="py-16 bg-white border-t border-lightGray">
-      <div className="container mx-auto px-4">
-        <h2 className="text-3xl font-playfair font-bold text-center mb-10">
-          Hapësira Ime
-        </h2>
-
-        {isLoading ? (
-          <div className="text-center py-10">
-            <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-brown border-r-transparent" role="status">
-              <span className="sr-only">Po ngarkohet...</span>
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold mb-8">My Enrolled Courses</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-lg shadow-md overflow-hidden animate-pulse">
+              <div className="h-48 bg-gray-200"></div>
+              <div className="p-4">
+                <div className="h-6 bg-gray-200 rounded w-3/4 mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
+              </div>
             </div>
-            <p className="mt-2 text-brown">Po ngarkohen të dhënat...</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Active Courses */}
-            <div className="bg-cream p-6 rounded-lg border border-lightGray">
-              <h4 className="text-xl font-playfair font-bold text-brown mb-4">Kurset e Mia Aktive</h4>
-              {enrolledCourses.length > 0 ? (
-                <ul className="space-y-3">
-                  {enrolledCourses.map((course) => (
-                    <li key={course.id} className="pb-2 border-b border-lightGray last:border-0">
-                      <div className="flex justify-between items-center">
-                        <span>{course.title}</span>
-                        <span className="text-sm text-brown">({course.progress}%)</span>
-                      </div>
-                      <div className="w-full bg-white rounded-full h-2 mt-1">
-                        <div 
-                          className="bg-gold h-2 rounded-full" 
-                          style={{ width: `${course.progress}%` }}
-                        ></div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-600 mb-4">Nuk jeni regjistruar në asnjë kurs ende.</p>
-              )}
-              <Link to="/courses" className="btn btn-secondary btn-sm mt-4 inline-block">
-                Gjej Kurse të Reja
-              </Link>
-            </div>
-
-            {/* Grades */}
-            <div className="bg-cream p-6 rounded-lg border border-lightGray">
-              <h4 className="text-xl font-playfair font-bold text-brown mb-4 flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Notat e Mia
-              </h4>
-              {enrolledCourses.filter(c => c.grade !== null).length > 0 ? (
-                <div className="space-y-3">
-                  {enrolledCourses
-                    .filter(c => c.grade !== null)
-                    .map((course) => (
-                      <div key={course.id} className="border-b border-lightGray pb-2 last:border-0">
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">{course.title}</span>
-                          <span className="text-lg font-bold text-brown">{course.grade}/10</span>
-                        </div>
-                        {course.feedback && (
-                          <p className="text-sm text-gray-600 mt-1 italic">Feedback: {course.feedback}</p>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <div className="text-gray-600">
-                  <p>Nuk keni marrë ende nota.</p>
-                  <p className="text-sm mt-2">Notat do të shfaqen këtu pasi instruktori t'i vendosë ato.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Saved Materials */}
-            <div className="bg-cream p-6 rounded-lg border border-lightGray">
-              <h4 className="text-xl font-playfair font-bold text-brown mb-4">Materiale të Ruajtura</h4>
-              <p className="text-gray-600">Nuk keni ruajtur asnjë material.</p>
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
-    </section>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-8">My Enrolled Courses</h1>
+      
+      {enrolledCourses.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {enrolledCourses.map((course) => (
+            <div key={course.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+              <div className="h-48 bg-gray-100 flex items-center justify-center">
+                {course.image ? (
+                  <img 
+                    src={course.image} 
+                    alt={course.title} 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <BookOpen className="w-16 h-16 text-gray-400" />
+                )}
+              </div>
+              <div className="p-4">
+                <h2 className="text-xl font-semibold mb-2 line-clamp-2">{course.title}</h2>
+                <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+                  {course.description || 'No description available'}
+                </p>
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-gray-900">
+                    {course.grade !== null ? `Grade: ${course.grade}%` : 'No grade yet'}
+                  </span>
+                  <Link
+                    to={`/courses/${course.id}`}
+                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                  >
+                    View Course →
+                  </Link>
+                </div>
+                
+                {course.feedback && (
+                  <div className="mt-4 p-3 bg-gray-50 rounded-md">
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Feedback:</span> {course.feedback}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <GraduationCap className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-lg font-medium text-gray-900">No enrolled courses</h3>
+          <p className="mt-1 text-gray-500">You haven't enrolled in any courses yet.</p>
+          <div className="mt-6">
+            <Link
+              to="/courses"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              Browse Courses
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
