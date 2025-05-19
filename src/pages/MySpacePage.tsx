@@ -22,23 +22,42 @@ const MySpacePage = () => {
       if (!user) return [];
       
       try {
-        // First get all enrollments for the user
+        console.log('Fetching enrollments for user:', user.id);
+        
+        // Get all student enrollments for the user
         const { data: enrollments, error: enrollError } = await supabase
           .from('enrollments')
           .select('*')
-          .eq('user_id', user.id);
+          .eq('user_id', user.id)
+          .eq('role', 'student'); // Only get student enrollments
         
-        if (enrollError) throw enrollError;
-        if (!enrollments?.length) return [];
+        if (enrollError) {
+          console.error('Error fetching enrollments:', enrollError);
+          throw enrollError;
+        }
+        
+        console.log('Found enrollments:', enrollments);
+        
+        if (!enrollments?.length) {
+          console.log('No enrollments found for user');
+          return [];
+        }
         
         // Get course details for each enrollment
         const courseIds = enrollments.map(e => e.course_id);
+        console.log('Fetching courses with IDs:', courseIds);
+        
         const { data: courses, error: coursesError } = await supabase
           .from('courses')
           .select('*')
           .in('id', courseIds);
         
-        if (coursesError) throw coursesError;
+        if (coursesError) {
+          console.error('Error fetching courses:', coursesError);
+          throw coursesError;
+        }
+        
+        console.log('Found courses:', courses);
         
         // Get grades for all enrolled courses
         const { data: grades = [], error: gradesError } = await supabase
@@ -47,20 +66,41 @@ const MySpacePage = () => {
           .eq('user_id', user.id)
           .in('course_id', courseIds);
         
-        if (gradesError) console.error('Error fetching grades:', gradesError);
+        if (gradesError) {
+          console.error('Error fetching grades:', gradesError);
+        } else {
+          console.log('Found grades:', grades);
+        }
         
         // Map the data to the expected format
-        return enrollments.map(enrollment => {
+        const result = enrollments.map(enrollment => {
           const course = courses.find(c => c.id === enrollment.course_id);
-          if (!course) return null;
+          if (!course) {
+            console.warn('No course found for enrollment:', enrollment);
+            return null;
+          }
+          
+          const courseGrade = grades?.find(g => g.course_id === enrollment.course_id);
           
           return {
-            ...course,
+            id: course.id,
+            title: course.title,
+            description: course.description,
+            image: course.image,
+            category: course.category,
+            instructor: course.instructor,
+            instructor_id: course.instructor_id,
+            status: course.status,
+            created_at: course.created_at,
+            updated_at: course.updated_at,
             enrollment_date: enrollment.created_at,
-            grade: grades?.find(g => g.course_id === enrollment.course_id)?.grade || null,
-            feedback: grades?.find(g => g.course_id === enrollment.course_id)?.feedback || null,
+            grade: courseGrade?.grade || null,
+            feedback: courseGrade?.feedback || null,
           };
         }).filter(Boolean); // Remove any null entries
+        
+        console.log('Mapped result:', result);
+        return result;
       } catch (error) {
         console.error('Error fetching enrolled courses:', error);
         return [];
