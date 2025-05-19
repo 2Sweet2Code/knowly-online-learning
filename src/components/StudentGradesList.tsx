@@ -134,25 +134,35 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
       // Prepare the data to upsert
       const gradeData = {
-        id: existingGrade?.id || undefined, // Use existing ID if it exists
+        id: existingGrade?.id, // Use existing ID if it exists
         user_id: userId,
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
-        updated_by: user.id
+        updated_by: user.id,
+        updated_at: new Date().toISOString()
       };
       
       console.log('Upserting grade data:', gradeData);
       
-      // Use upsert to either insert or update the grade
-      const { error: upsertError } = await supabase
-        .from('student_grades')
-        .upsert(gradeData, {
-          onConflict: 'user_id,course_id',
-          ignoreDuplicates: false
-        });
+      let error;
       
-      if (upsertError) throw upsertError;
+      if (existingGrade?.id) {
+        // Update existing grade
+        const { error: updateError } = await supabase
+          .from('student_grades')
+          .update(gradeData)
+          .eq('id', existingGrade.id);
+        error = updateError;
+      } else {
+        // Insert new grade
+        const { error: insertError } = await supabase
+          .from('student_grades')
+          .insert(gradeData);
+        error = insertError;
+      }
+      
+      if (error) throw error;
       
       console.log('Grade saved successfully');
       
