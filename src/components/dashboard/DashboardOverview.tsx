@@ -251,7 +251,7 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
                       {course.students || 0} studentë
                     </span>
                     <button 
-                      onClick={() => navigate(`/courses/${course.id}/manage`)}
+                      onClick={() => navigate(`/courses/f9d6cb51-15cf-4b57-aacc-6c0de3f1d6fe`)}
                       className="text-brown hover:underline text-sm"
                     >
                       Menaxho
