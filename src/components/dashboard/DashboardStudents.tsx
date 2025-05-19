@@ -3,17 +3,43 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, AlertCircle } from "lucide-react";
-import type { Course, Profile, Enrollment } from "@/types";
+import { Loader2, Search, AlertCircle, User, Edit, Save } from 'lucide-react';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
+type StudentGrade = {
+  id?: string;
+  user_id: string;
+  course_id: string;
+  grade: number | null;
+  feedback: string | null;
+  updated_by?: string;
+  updated_at?: string;
+  updated_by_name?: string;
+};
 
 // Define a combined type for the fetched data
 interface InstructorStudentData {
   enrollment_id: string;
   student_id: string;
   student_name: string | null;
+  student_email?: string | null;
+  student_avatar?: string | null;
   course_id: string;
   course_title: string | null;
   enrolled_at: string | null;
+  grade?: number | null;
+  feedback?: string | null;
+  updated_at?: string | null;
+  updated_by_name?: string | null;
 }
 
 // Define a type that matches the expected result of the Supabase query
@@ -21,9 +47,20 @@ type EnrollmentQueryResult = {
   id: string;
   created_at: string | null;
   course_id: string;
-  user_id: string; // Expect user_id from enrollments table
+  user_id: string;
   courses: { title: string } | null;
-  profiles: { id: string; name: string | null } | null;
+  profiles: { 
+    id: string; 
+    name: string | null; 
+    email: string | null; 
+    avatar_url: string | null;
+  } | null;
+  student_grades?: {
+    grade: number | null;
+    feedback: string | null;
+    updated_at: string | null;
+    updated_by_name?: string | null;
+  } | null;
 };
 
 export const DashboardStudents = () => {
@@ -31,6 +68,11 @@ export const DashboardStudents = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingGrades, setEditingGrades] = useState<Record<string, boolean>>({});
+  const [gradeInputs, setGradeInputs] = useState<Record<string, string>>({});
+  const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
+  const [savingGrades, setSavingGrades] = useState<Record<string, boolean>>({});
 
   // Query to fetch student enrollment data for instructor's courses
   const { 
@@ -59,20 +101,32 @@ export const DashboardStudents = () => {
 
       const courseIds = instructorCourses.map(c => c.id);
 
-      // 2. Fetch enrollments for those courses, joining with profiles and courses tables
+      // 2. Fetch enrollments for those courses, joining with profiles, courses, and grades
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        // Use standard explicit join syntax
         .select(`
           id, 
           created_at, 
           course_id, 
           user_id, 
-          courses!inner ( title ),
-          profiles!inner ( id, name )
+          courses!inner ( 
+            title 
+          ),
+          profiles!inner ( 
+            id, 
+            name, 
+            email,
+            avatar_url
+          ),
+          student_grades!left (
+            grade,
+            feedback,
+            updated_at,
+            updated_by_name:profiles!student_grades_updated_by_fkey(name)
+          )
         `)
         .in('course_id', courseIds)
-        // Cast the result to our expected query result type
+        .order('created_at', { ascending: false })
         .returns<EnrollmentQueryResult[]>();
 
       if (enrollmentsError) {
@@ -83,26 +137,32 @@ export const DashboardStudents = () => {
       if (!enrollments) return [];
 
       // 3. Transform data
-      // Remove EnrollmentWithJoins type definition as it's replaced by EnrollmentQueryResult
-
-      const formattedData: InstructorStudentData[] = enrollments
-           // Map over the result directly, TS should infer 'enroll' type
+      const formattedData = enrollments
            .map((enroll) => {
-             // Add null checks for joined tables
              if (!enroll.profiles || !enroll.courses) {
                  console.warn("Skipping enrollment due to missing profile or course join data:", enroll.id);
-                 return null; // Skip this enrollment if join failed unexpectedly
+                 return null;
              }
-             return {
+             
+             const gradeData = enroll.student_grades?.[0];
+             
+             const studentData: InstructorStudentData = {
                  enrollment_id: enroll.id,
-                 student_id: enroll.profiles.id, // Use profile id from join
-                 student_name: enroll.profiles.name || 'Unnamed Student',
+                 student_id: enroll.profiles.id,
+                 student_name: enroll.profiles.name || 'Student pa emër',
+                 student_email: enroll.profiles.email || null,
+                 student_avatar: enroll.profiles.avatar_url || null,
                  course_id: enroll.course_id,
-                 course_title: enroll.courses.title || 'Unknown Course',
+                 course_title: enroll.courses.title || 'Kurs pa emër',
                  enrolled_at: enroll.created_at,
+                 grade: gradeData?.grade ?? null,
+                 feedback: gradeData?.feedback ?? null,
+                 updated_at: gradeData?.updated_at ?? null,
+                 updated_by_name: gradeData?.updated_by_name ?? null
              };
+             
+             return studentData;
            })
-           // Filter out any nulls from the mapping and use type predicate
            .filter((s): s is InstructorStudentData => s !== null);
 
       return formattedData;
@@ -110,20 +170,135 @@ export const DashboardStudents = () => {
     enabled: !!user?.id,
   });
 
-  // TODO: Fetch distinct list of instructor's courses for the filter dropdown
-  // const { data: filterCourses } = useQuery(...);
-  const uniqueCourses = Array.from(new Map(studentData.map(s => [s.course_id, { id: s.course_id, title: s.course_title }])).values());
+  // Get unique courses for the filter dropdown
+  const uniqueCourses = Array.from(
+    new Map(
+      studentData.map(s => [s.course_id, { id: s.course_id, title: s.course_title }])
+    ).values()
+  );
 
+  // Filter and search students
+  const filteredStudents = studentData.filter(student => {
+    const matchesCourse = selectedCourseFilter === 'all' || student.course_id === selectedCourseFilter;
+    const matchesSearch = searchQuery === '' || 
+      student.student_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.student_email?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCourse && matchesSearch;
+  });
 
   const handleViewProfile = (studentId: string) => {
-    // Navigate to the student's profile page
     window.open(`/profile/${studentId}`, '_blank');
   };
-  
-  // Filtered students based on dropdown selection
-  const filteredStudents = studentData.filter(student => 
-      selectedCourseFilter === 'all' || student.course_id === selectedCourseFilter
-  );
+
+  const handleGradeChange = (studentId: string, value: string) => {
+    setGradeInputs(prev => ({
+      ...prev,
+      [studentId]: value
+    }));
+  };
+
+  const handleFeedbackChange = (studentId: string, value: string) => {
+    setFeedbackInputs(prev => ({
+      ...prev,
+      [studentId]: value
+    }));
+  };
+
+  const toggleEditGrade = (studentId: string) => {
+    setEditingGrades(prev => ({
+      ...prev,
+      [studentId]: !prev[studentId]
+    }));
+  };
+
+  const handleSaveGrade = async (student: InstructorStudentData) => {
+    if (!user?.id) return;
+    
+    const studentId = student.student_id;
+    const gradeStr = gradeInputs[studentId] ?? student.grade?.toString() ?? '';
+    const grade = gradeStr ? parseFloat(gradeStr) : null;
+    const feedback = feedbackInputs[studentId] ?? student.feedback ?? '';
+
+    setSavingGrades(prev => ({ ...prev, [studentId]: true }));
+
+    try {
+      const gradeData = {
+        user_id: studentId,
+        course_id: student.course_id,
+        grade: grade,
+        feedback: feedback || null,
+        updated_by: user.id
+      };
+
+      let error;
+      
+      // Check if grade exists
+      const { data: existingGrade } = await supabase
+        .from('student_grades')
+        .select('id')
+        .eq('user_id', studentId)
+        .eq('course_id', student.course_id)
+        .maybeSingle();
+
+      if (existingGrade?.id) {
+        // Update existing grade
+        const { error: updateError } = await supabase
+          .from('student_grades')
+          .update(gradeData)
+          .eq('id', existingGrade.id);
+        error = updateError;
+      } else {
+        // Insert new grade
+        const { error: insertError } = await supabase
+          .from('student_grades')
+          .insert(gradeData);
+        error = insertError;
+      }
+
+      if (error) throw error;
+
+      // Update UI
+      const updatedStudents = studentData.map(s => {
+        if (s.student_id === studentId && s.course_id === student.course_id) {
+          return {
+            ...s,
+            grade,
+            feedback: feedback || null,
+            updated_at: new Date().toISOString(),
+            updated_by_name: user.user_metadata?.full_name || 'Ju'
+          };
+        }
+        return s;
+      });
+
+      // Update the query cache
+      queryClient.setQueryData(['instructorStudents', user.id], updatedStudents);
+      
+      // Reset editing state
+      setEditingGrades(prev => ({
+        ...prev,
+        [studentId]: false
+      }));
+
+      toast({
+        title: 'Sukses',
+        description: 'Nota u ruajt me sukses.',
+        variant: 'default',
+      });
+    } catch (error) {
+      console.error('Error saving grade:', error);
+      toast({
+        title: 'Gabim',
+        description: 'Ndodhi një gabim gjatë ruajtjes së notës.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingGrades(prev => ({
+        ...prev,
+        [studentId]: false
+      }));
+    }
+  };
 
   // --- Render Logic ---
   if (isLoading) {
@@ -154,79 +329,211 @@ export const DashboardStudents = () => {
   }
 
   return (
-    <div>
-      <h3 className="text-2xl font-playfair mb-6 pb-3 border-b border-lightGray">
-        Menaxhimi i Studentëve
-      </h3>
-      
-      <div className="bg-white p-6 rounded-lg border border-lightGray shadow-sm">
-        <h4 className="text-xl font-playfair font-bold mb-4">
-          Lista e Studentëve ({filteredStudents.length})
-        </h4>
-        
-        <div className="mb-4">
-          <label htmlFor="course-filter" className="block mb-2 font-semibold text-brown">Filtro sipas kursit:</label>
-          <select 
-            id="course-filter" 
-            className="px-4 py-2 border border-lightGray rounded-md focus:outline-none focus:border-brown focus:ring-1 focus:ring-brown"
-            value={selectedCourseFilter}
-            onChange={(e) => setSelectedCourseFilter(e.target.value)}
-          >
-            <option value="all">Të gjitha Kurset</option>
-            {/* Populate with actual courses instructor teaches */}
-            {uniqueCourses.map(course => (
-               <option key={course.id} value={course.id}>{course.title || "Kurs pa Titull"}</option>
-            ))}
-          </select>
-        </div>
-        
-        <div className="overflow-x-auto mt-4">
-          <table className="w-full border-collapse">
-            <thead className="bg-cream">
-              <tr>
-                <th className="border border-lightGray p-3 text-left">Emri Studentit</th>
-                {/* Add Email if available */}
-                {/* <th className="border border-lightGray p-3 text-left">Email</th> */} 
-                <th className="border border-lightGray p-3 text-left">Kursi</th>
-                <th className="border border-lightGray p-3 text-left">Regjistruar Më</th>
-                <th className="border border-lightGray p-3 text-left">Veprime</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.length > 0 ? (
-                filteredStudents.map(student => (
-                  <tr key={student.enrollment_id}>
-                    <td className="border border-lightGray p-3">{student.student_name}</td>
-                    {/* <td className="border border-lightGray p-3">{student.student_email || 'N/A'}</td> */} 
-                    <td className="border border-lightGray p-3">{student.course_title}</td>
-                    <td className="border border-lightGray p-3">
-                        {student.enrolled_at ? new Date(student.enrolled_at).toLocaleDateString('sq-AL') : 'N/A'}
-                    </td>
-                    <td className="border border-lightGray p-3">
-                      <button 
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleViewProfile(student.student_id)}
-                        title="Shiko Profilin e Studentit"
-                      >
-                        Shiko Profilin 
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                 <tr>
-                   <td colSpan={4} className="text-center py-6 text-gray-500 border border-lightGray">
-                      {studentData.length === 0 
-                         ? "Nuk ka studentë të regjistruar në kurset tuaja."
-                         : "Nuk ka studentë që përputhen me filtrin e zgjedhur."
-                      }
-                   </td>
-                 </tr>
-              )}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <h2 className="text-2xl font-bold tracking-tight">Menaxhimi i Studentëve</h2>
+        <div className="mt-4 md:mt-0 flex space-x-2">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Kërko studentë..."
+              className="pl-8"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex flex-col space-y-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle>Lista e Studentëve</CardTitle>
+              <CardDescription>
+                {filteredStudents.length} studentë të gjetur
+              </CardDescription>
+            </div>
+            <div className="w-full md:w-64">
+              <select
+                value={selectedCourseFilter}
+                onChange={(e) => setSelectedCourseFilter(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="all">Të gjitha kurset</option>
+                {uniqueCourses.map((course) => (
+                  <option key={course.id} value={course.id}>
+                    {course.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border p-4">
+            <div className="w-full overflow-auto">
+              <table className="w-full caption-bottom text-sm">
+                <thead className="[&_tr]:border-b">
+                  <tr className="border-b transition-colors hover:bg-muted/50">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Student</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Kursi</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Nota</th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">Koment</th>
+                    <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">Veprimet</th>
+                  </tr>
+                </thead>
+                <tbody className="[&_tr:last-child]:border-0">
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center">
+                        <div className="flex items-center justify-center space-x-2">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                          <span>Duke ngarkuar...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : isError ? (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-destructive">
+                        <div className="flex items-center justify-center space-x-2">
+                          <AlertCircle className="h-5 w-5" />
+                          <span>Gabim: {error?.message || 'Ndodhi një gabim gjatë ngarkimit'}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredStudents.length > 0 ? (
+                    filteredStudents.map((student) => (
+                      <tr key={`${student.student_id}-${student.course_id}`} className="border-b transition-colors hover:bg-muted/50">
+                        <td className="p-4 align-middle">
+                          <div className="flex items-center space-x-3">
+                            <Avatar className="h-9 w-9">
+                              {student.student_avatar ? (
+                                <AvatarImage src={student.student_avatar} alt={student.student_name || ''} />
+                              ) : (
+                                <AvatarFallback>
+                                  {student.student_name?.charAt(0) || 'S'}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+                            <div>
+                              <div className="font-medium">{student.student_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {student.student_email}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <div className="font-medium">{student.course_title}</div>
+                          <div className="text-sm text-muted-foreground">
+                            Regjistruar më {student.enrolled_at ? new Date(student.enrolled_at).toLocaleDateString('sq-AL') : 'N/A'}
+                          </div>
+                        </td>
+                        <td className="p-4 align-middle">
+                          {editingGrades[student.student_id] ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              max="10"
+                              step="0.1"
+                              className="w-20"
+                              value={gradeInputs[student.student_id] ?? student.grade ?? ''}
+                              onChange={(e) => handleGradeChange(student.student_id, e.target.value)}
+                              disabled={savingGrades[student.student_id]}
+                            />
+                          ) : (
+                            <span className={`font-medium ${student.grade !== null ? 'text-primary' : 'text-muted-foreground'}`}>
+                              {student.grade !== null ? student.grade.toFixed(1) : 'Pa notë'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 align-middle">
+                          {editingGrades[student.student_id] ? (
+                            <Input
+                              type="text"
+                              placeholder="Shto koment..."
+                              value={feedbackInputs[student.student_id] ?? student.feedback ?? ''}
+                              onChange={(e) => handleFeedbackChange(student.student_id, e.target.value)}
+                              disabled={savingGrades[student.student_id]}
+                            />
+                          ) : (
+                            <div className="max-w-[200px] truncate">
+                              {student.feedback || 'Pa koment'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 align-middle text-right">
+                          <div className="flex justify-end space-x-2">
+                            {editingGrades[student.student_id] ? (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleEditGrade(student.student_id)}
+                                  disabled={savingGrades[student.student_id]}
+                                >
+                                  Anulo
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleSaveGrade(student)}
+                                  disabled={savingGrades[student.student_id]}
+                                >
+                                  {savingGrades[student.student_id] ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Save className="mr-2 h-4 w-4" />
+                                  )}
+                                  Ruaj
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleEditGrade(student.student_id)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Ndrysho
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleViewProfile(student.student_id)}
+                                  title="Shiko profilin"
+                                >
+                                  <User className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                          {student.updated_by_name && student.updated_at && (
+                            <div className="mt-1 text-xs text-muted-foreground text-right">
+                              Përditësuar nga {student.updated_by_name} më {new Date(student.updated_at).toLocaleDateString('sq-AL')}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                        {studentData.length === 0
+                          ? "Nuk keni studentë të regjistruar në kurset tuaja."
+                          : "Nuk u gjetën studentë që përputhen me kërkimin tuaj."
+                        }
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
