@@ -109,26 +109,58 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
   
   const handleToggleCourseStatus = async (course: Course) => {
     try {
+      // Show loading state immediately
+      const loadingToast = toast({
+        title: "Duke përditësuar...",
+        description: "Ju lutem prisni ndërkohë që ndryshimet ruhen.",
+      });
+
       const newStatus = course.status === 'active' ? 'draft' : 'active';
       
-      const { error } = await supabase
+      console.log('Updating course status:', {
+        courseId: course.id,
+        currentStatus: course.status,
+        newStatus,
+        user: user?.id
+      });
+      
+      const { data, error } = await supabase
         .from('courses')
-        .update({ status: newStatus })
-        .eq('id', course.id);
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', course.id)
+        .select()
+        .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating course status:', error);
+        throw error;
+      }
       
-      queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] });
+      console.log('Update response:', data);
       
+      // Invalidate both the instructor's courses and the specific course query
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['course', course.id] })
+      ]);
+      
+      // Show success toast - this will automatically replace the loading toast
       toast({
         title: "Sukses",
         description: `Kursi u ${newStatus === 'active' ? 'aktivizua' : 'çaktivizua'} me sukses.`,
       });
     } catch (error) {
-      console.error("Failed to update course status", error);
+      console.error("Failed to update course status:", error);
+      
+      // Show error toast - this will automatically replace the loading toast
       toast({
         title: "Gabim",
-        description: "Ndodhi një gabim gjatë përditësimit të statusit të kursit.",
+        description: error instanceof Error ? 
+          `Ndodhi një gabim: ${error.message}` :
+          "Ndodhi një gabim gjatë përditësimit të statusit të kursit.",
         variant: "destructive",
       });
     }
