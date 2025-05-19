@@ -116,11 +116,8 @@ export const DashboardStudents = () => {
 
 
   const handleViewProfile = (studentId: string) => {
-    // TODO: Implement navigation or modal display for student profile
-    toast({
-      title: "Shiko Profilin",
-      description: `TODO: Implement view for student ID: ${studentId}`,
-    });
+    // Navigate to the student's profile page
+    window.open(`/profile/${studentId}`, '_blank');
   };
   
   // Filtered students based on dropdown selection

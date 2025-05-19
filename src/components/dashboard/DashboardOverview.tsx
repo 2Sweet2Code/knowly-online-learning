@@ -321,7 +321,7 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
                 </div>
                 {announcement.course_id && (
                   <button 
-                    onClick={() => navigate(`/dashboard/courses/${announcement.course_id}`)}
+                    onClick={() => navigate(`/courses/${announcement.course_id}`)}
                     className="mt-2 text-sm text-brown hover:underline"
                   >
                     Shiko Kursin →
