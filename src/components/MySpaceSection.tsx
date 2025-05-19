@@ -52,12 +52,25 @@ export const MySpaceSection = () => {
       if (!user) return [];
       
       try {
+        console.log('Fetching enrollments for user:', user.id);
+        
         // Get user enrollments with course details
         const { data: enrollments, error: enrollError } = await supabase
           .from('enrollments')
           .select('*, courses(*)')
-          .eq('user_id', user.id)
-          .eq('status', 'enrolled') as { data: Array<{ id: string; created_at: string; course_id: string; courses: Course }> | null; error: PostgrestError | null };
+          .eq('user_id', user.id) as { data: Array<{ id: string; created_at: string; course_id: string; courses: Course }> | null; error: PostgrestError | null };
+          
+        if (enrollError) {
+          console.error('Error fetching enrollments:', enrollError);
+          throw enrollError;
+        }
+        
+        console.log('Found enrollments:', enrollments);
+        
+        if (!enrollments?.length) {
+          console.log('No enrollments found for user');
+          return [];
+        }
         
         if (enrollError) throw enrollError;
         if (!enrollments?.length) return [];
