@@ -100,9 +100,15 @@ export const DashboardStudents = () => {
       }
 
       const courseIds = instructorCourses.map(c => c.id);
+      console.log('Fetching enrollments for course IDs:', courseIds);
+
+      if (courseIds.length === 0) {
+        console.log('No course IDs found, returning empty array');
+        return [];
+      }
 
       // 2. Fetch enrollments for those courses, joining with profiles, courses, and grades
-      const { data: enrollments, error: enrollmentsError } = await supabase
+      let query = supabase
         .from('enrollments')
         .select(`
           id, 
@@ -124,14 +130,32 @@ export const DashboardStudents = () => {
             updated_at,
             updated_by_name:profiles!student_grades_updated_by_fkey(name)
           )
-        `)
-        .in('course_id', courseIds)
+        `);
+
+      // Handle the case where there are multiple course IDs
+      if (courseIds.length > 0) {
+        query = query.in('course_id', courseIds);
+      } else {
+        // If no course IDs, return empty array
+        return [];
+      }
+
+      const { data: enrollments, error: enrollmentsError, status, statusText } = await query
         .order('created_at', { ascending: false })
         .returns<EnrollmentQueryResult[]>();
 
       if (enrollmentsError) {
-        console.error("Error fetching enrollments:", enrollmentsError);
-        throw new Error("Failed to fetch student enrollments.");
+        console.error("Error fetching enrollments:", {
+          error: enrollmentsError,
+          status,
+          statusText,
+          courseIds,
+          message: enrollmentsError.message,
+          details: enrollmentsError.details,
+          hint: enrollmentsError.hint,
+          code: enrollmentsError.code
+        });
+        throw new Error(`Failed to fetch student enrollments: ${enrollmentsError.message}`);
       }
       
       if (!enrollments) return [];
