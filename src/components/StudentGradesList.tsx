@@ -46,12 +46,13 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         return;
       }
 
-      // Get user profiles
+      // Get user profiles (only students, exclude instructors and admins)
       const userIds = enrolledStudents.map(e => e.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, name, email, role')
-        .in('id', userIds);
+        .in('id', userIds)
+        .not('role', 'in', '("instructor","admin")');
       
       if (profilesError) throw profilesError;
       if (!profiles?.length) {
@@ -161,6 +162,10 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     const isCurrentStudent = student.user_id === user?.id;
     const isSaving = savingGrades[student.id] || false;
 
+    // Don't show instructors in the list at all
+    if (student.role === 'instructor' || student.role === 'admin') return null;
+    
+    // Only show the student's own grade or if user is an instructor
     if (!isInstructor && !isCurrentStudent) return null;
 
     return (
