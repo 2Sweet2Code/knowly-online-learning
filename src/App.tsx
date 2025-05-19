@@ -128,10 +128,12 @@ const App = () => {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
                 <Route path="/courses/:courseId" element={<CourseDetailWrapper />} />
+                <Route path="/courses/:courseId/stream" element={<Navigate to="/courses/:courseId" replace />} />
                 <Route path="/my-space" element={<MySpacePage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/contact" element={<ContactPage />} />
+                <Route path="/menaxho" element={<Navigate to="/courses/f9d6cb51-15cf-4b57-aacc-6c0de3f1d6fe" replace />} />
                 <Route path="/dashboard/*" element={<DashboardLayout />}>
                   <Route index element={<DashboardOverview />} />
                   <Route path="courses">
