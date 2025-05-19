@@ -134,6 +134,8 @@ const App = () => {
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/menaxho" element={<Navigate to="/courses/f9d6cb51-15cf-4b57-aacc-6c0de3f1d6fe" replace />} />
+                {/* Redirect from /instructor/dashboard to /dashboard for backward compatibility */}
+                <Route path="/instructor/dashboard" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard/*" element={<DashboardLayout />}>
                   <Route index element={<DashboardOverview />} />
                   <Route path="courses">

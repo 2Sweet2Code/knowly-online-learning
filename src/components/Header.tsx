@@ -46,7 +46,7 @@ export const Header = () => {
             {user && (user.role === 'instructor' || user.role === 'admin') && (
               <li className="py-2 md:py-0">
                 <Link 
-                  to="/instructor/dashboard" 
+                  to="/dashboard" 
                   className="font-semibold relative hover:text-gold after:content-[''] after:absolute after:bottom-[-3px] after:left-0 after:w-0 after:h-0.5 after:bg-gold after:transition-all after:duration-300 hover:after:w-full"
                 >
                   Paneli i Menaxhimit
