@@ -22,18 +22,25 @@ const MySpacePage = () => {
       if (!user) return [];
       
       try {
-        // Get user enrollments with course details
+        // First get all enrollments for the user
         const { data: enrollments, error: enrollError } = await supabase
           .from('enrollments')
-          .select('*, courses(*)')
-          .eq('user_id', user.id)
-          .eq('status', 'enrolled');
+          .select('*')
+          .eq('user_id', user.id);
         
         if (enrollError) throw enrollError;
         if (!enrollments?.length) return [];
         
-        // Get grades for all enrolled courses
+        // Get course details for each enrollment
         const courseIds = enrollments.map(e => e.course_id);
+        const { data: courses, error: coursesError } = await supabase
+          .from('courses')
+          .select('*')
+          .in('id', courseIds);
+        
+        if (coursesError) throw coursesError;
+        
+        // Get grades for all enrolled courses
         const { data: grades = [], error: gradesError } = await supabase
           .from('student_grades')
           .select('*')
@@ -43,12 +50,17 @@ const MySpacePage = () => {
         if (gradesError) console.error('Error fetching grades:', gradesError);
         
         // Map the data to the expected format
-        return enrollments.map(enrollment => ({
-          ...enrollment.courses,
-          enrollment_date: enrollment.created_at,
-          grade: grades?.find(g => g.course_id === enrollment.course_id)?.grade || null,
-          feedback: grades?.find(g => g.course_id === enrollment.course_id)?.feedback || null,
-        }));
+        return enrollments.map(enrollment => {
+          const course = courses.find(c => c.id === enrollment.course_id);
+          if (!course) return null;
+          
+          return {
+            ...course,
+            enrollment_date: enrollment.created_at,
+            grade: grades?.find(g => g.course_id === enrollment.course_id)?.grade || null,
+            feedback: grades?.find(g => g.course_id === enrollment.course_id)?.feedback || null,
+          };
+        }).filter(Boolean); // Remove any null entries
       } catch (error) {
         console.error('Error fetching enrolled courses:', error);
         return [];
