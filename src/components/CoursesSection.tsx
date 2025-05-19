@@ -14,6 +14,7 @@ const fetchCourses = async (category: string) => {
     let query = supabase
       .from('courses')
       .select('*')
+      .eq('status', 'active')
       .order('created_at', { ascending: false });
     
     if (category !== 'all') {
