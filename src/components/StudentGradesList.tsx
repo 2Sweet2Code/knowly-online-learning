@@ -18,6 +18,9 @@ interface StudentGrade {
   name: string;
   email?: string | null;
   role: string;
+  updated_by?: string;
+  updated_at?: string;
+  updated_by_name?: string;
 }
 
 export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
@@ -60,32 +63,38 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         return;
       }
 
-      // Get existing grades
+      // Get existing grades with instructor info
       const { data: grades = [], error: gradesError } = await supabase
         .from('student_grades')
-        .select('*')
+        .select(`
+          *,
+          updated_by_user:profiles!student_grades_updated_by_fkey (id, name, email)
+        `)
         .eq('course_id', courseId)
         .in('user_id', userIds);
 
-      if (gradesError && gradesError.code !== '42P01') { // Ignore "table does not exist" error
+      if (gradesError && !['42P01', 'PGRST116'].includes(gradesError.code)) {
         console.error('Error fetching grades:', gradesError);
+        throw gradesError;
       }
 
       // Combine data
       const studentsWithGrades = profiles.map(profile => {
-        const grade = grades?.find(g => g.user_id === profile.id) || {
-          id: `temp-${profile.id}`,
-          course_id: courseId,
-          user_id: profile.id,
-          grade: null,
-          feedback: null
-        };
+        const grade = grades?.find(g => g.user_id === profile.id);
+        const updatedBy = grade?.updated_by_user?.name || 'Sistemi';
         
         return {
-          ...grade,
+          id: grade?.id || `temp-${profile.id}`,
+          course_id: courseId,
+          user_id: profile.id,
+          grade: grade?.grade ?? null,
+          feedback: grade?.feedback ?? null,
+          updated_by: grade?.updated_by,
+          updated_at: grade?.updated_at,
           name: profile.name || 'Student pa emër',
           email: profile.email,
-          role: profile.role || 'student'
+          role: profile.role || 'student',
+          updated_by_name: updatedBy
         };
       });
 
@@ -105,22 +114,47 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const handleSaveGrade = async (studentId: string, grade: number | null, feedback: string | null) => {
     if (!user) return;
     
+    const userId = studentId.replace('temp-', '');
     setSavingGrades(prev => ({ ...prev, [studentId]: true }));
     
     try {
-      const { error } = await supabase
+      console.log('Saving grade:', { userId, courseId, grade, feedback });
+      
+      // First check if a grade already exists
+      const { data: existingGrade, error: fetchError } = await supabase
         .from('student_grades')
-        .upsert({
-          id: studentId.startsWith('temp-') ? undefined : studentId,
-          user_id: studentId.replace('temp-', ''),
-          course_id: courseId,
-          grade: grade ? Number(grade) : null,
-          feedback
-        }, {
-          onConflict: 'user_id,course_id'
+        .select('id')
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .maybeSingle();
+      
+      if (fetchError && fetchError.code !== 'PGRST116') { // Ignore "not found" error
+        throw fetchError;
+      }
+      
+      // Prepare the data to upsert
+      const gradeData = {
+        id: existingGrade?.id || undefined, // Use existing ID if it exists
+        user_id: userId,
+        course_id: courseId,
+        grade: grade !== null ? Number(grade) : null,
+        feedback: feedback || null,
+        updated_by: user.id
+      };
+      
+      console.log('Upserting grade data:', gradeData);
+      
+      // Use upsert to either insert or update the grade
+      const { error: upsertError } = await supabase
+        .from('student_grades')
+        .upsert(gradeData, {
+          onConflict: 'user_id,course_id',
+          ignoreDuplicates: false
         });
       
-      if (error) throw error;
+      if (upsertError) throw upsertError;
+      
+      console.log('Grade saved successfully');
       
       toast({
         title: 'Sukses',
@@ -128,12 +162,14 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         variant: 'default',
       });
       
-      fetchStudentsWithGrades();
+      // Refresh the data
+      await fetchStudentsWithGrades();
+      
     } catch (error) {
       console.error('Error saving grade:', error);
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë ruajtjes së notës.',
+        description: error instanceof Error ? error.message : 'Ndodhi një gabim gjatë ruajtjes së notës.',
         variant: 'destructive',
       });
     } finally {
@@ -213,21 +249,31 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
           </div>
         ) : (
           <div className="flex flex-col gap-2 mt-2 md:mt-0">
-            <div>
-              <span className="text-sm font-medium">Nota juaj: </span>
-              <span className="text-lg font-semibold">
-                {student.grade !== null ? student.grade.toFixed(1) : 'Nuk ka notë'}
-              </span>
-              {student.grade !== null && <span className="text-sm text-gray-500">/10</span>}
-            </div>
-            {student.feedback && (
-              <div className="mt-1">
-                <span className="text-sm font-medium">Komentet e instruktorit: </span>
-                <p className="text-sm text-gray-700 mt-1 bg-gray-50 p-2 rounded">
-                  {student.feedback}
-                </p>
+            <div className="space-y-2">
+              <div>
+                <span className="text-sm font-medium">Nota juaj: </span>
+                <span className="text-lg font-semibold">
+                  {student.grade !== null ? student.grade.toFixed(1) : 'Nuk ka notë'}
+                </span>
+                {student.grade !== null && <span className="text-sm text-gray-500">/10</span>}
               </div>
-            )}
+              
+              {student.updated_at && (
+                <div className="text-xs text-gray-500">
+                  Përditësuar më: {new Date(student.updated_at).toLocaleDateString('sq-AL')}
+                  {student.updated_by_name && ` nga ${student.updated_by_name}`}
+                </div>
+              )}
+              
+              {student.feedback && (
+                <div className="mt-1">
+                  <span className="text-sm font-medium">Komentet e instruktorit: </span>
+                  <p className="text-sm text-gray-700 mt-1 bg-gray-50 p-2 rounded">
+                    {student.feedback}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
