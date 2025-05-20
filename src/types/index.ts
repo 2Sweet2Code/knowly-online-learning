@@ -31,6 +31,14 @@ export interface Course {
   accessCode?: string;
   access_code?: string; // For database compatibility
   allow_admin_applications?: boolean;
+  enrollments?: Array<{
+    id: string;
+    user_id: string;
+    course_id: string;
+    status?: string;
+    created_at?: string;
+    updated_at?: string;
+  }>;
 }
 
 export interface Enrollment {
