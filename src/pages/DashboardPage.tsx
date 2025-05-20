@@ -40,7 +40,7 @@ const DashboardPage = () => {
     };
   }, [isLoading]);
 
-  if (!isLoading && (!user || (user.role !== 'instructor' && user.role !== 'admin'))) {
+  if (!isLoading && !user) {
     return <Navigate to="/" />;
   }
   
@@ -96,7 +96,9 @@ const DashboardPage = () => {
                   } />
                   <Route path=":courseId/*" element={<CourseManagementPage />} />
                 </Route>
-                <Route path="students" element={<DashboardStudents />} />
+                {user?.role === 'student' && (
+                  <Route path="students" element={<DashboardStudents />} />
+                )}
                 <Route path="analytics" element={<DashboardAnalytics />} />
                 <Route path="settings" element={<DashboardSettings />} />
                 {user?.role === 'admin' && (
