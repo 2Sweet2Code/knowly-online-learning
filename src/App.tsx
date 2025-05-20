@@ -239,24 +239,23 @@ const App = () => {
   }
 
   return (
-    <ErrorBoundary context="Application root error">
-      <QueryClientProvider client={queryClient}>
-        <PayPalScriptProvider 
-          options={{ 
-            clientId: "test",
-            currency: "EUR",
-            intent: "capture",
-            components: paypalReady ? 'buttons' : '',
-            dataSdkIntegrationSource: 'integrationbuilder_sc'
-          }}
-          deferLoading={true}
-        >
-          <ErrorBoundary context="Auth provider error">
-            <AuthProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Sonner />
-                <BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <PayPalScriptProvider 
+        options={{ 
+          clientId: "test",
+          currency: "EUR",
+          intent: "capture",
+          components: paypalReady ? 'buttons' : '',
+          dataSdkIntegrationSource: 'integrationbuilder_sc'
+        }}
+        deferLoading={true}
+      >
+        <ErrorBoundary context="Auth provider error">
+          <AuthProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
@@ -286,18 +285,17 @@ const App = () => {
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
-                  </BrowserRouter>
-              </TooltipProvider>
-            </AuthProvider>
-          </ErrorBoundary>
-        </PayPalScriptProvider>
-        {process.env.NODE_ENV === 'development' && (
-          <Suspense fallback={null}>
-            <ReactQueryDevtools />
-          </Suspense>
-        )}
-      </QueryClientProvider>
-    </ErrorBoundary>
+                </BrowserRouter>
+            </TooltipProvider>
+          </AuthProvider>
+        </ErrorBoundary>
+      </PayPalScriptProvider>
+      {process.env.NODE_ENV === 'development' && (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools />
+        </Suspense>
+      )}
+    </QueryClientProvider>
   );
 };
 

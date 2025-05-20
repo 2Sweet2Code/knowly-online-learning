@@ -104,12 +104,15 @@ const AdminApplyCoursesPage = () => {
           image: dbCourse.image,
           category: dbCourse.category,
           instructor: instructorMap.get(dbCourse.instructor_id) || 'Unknown Instructor',
+          instructor_id: dbCourse.instructor_id,
           instructorId: dbCourse.instructor_id,
           students: 0, // This field might not exist in the database, default to 0
           status: dbCourse.status,
-          created_at: dbCourse.created_at,
-          updated_at: dbCourse.updated_at,
-          allow_admin_applications: true, // Default to true for now since we're only showing active courses
+          price: 0, // Default price to 0
+          isPaid: false, // Default to free course
+          created_at: dbCourse.created_at || new Date().toISOString(),
+          updated_at: dbCourse.updated_at || new Date().toISOString(),
+          allow_admin_applications: dbCourse.allow_admin_applications ?? true, // Use the value from DB or default to true
         }));
     },
     enabled: !!user && user.role === 'admin', 

@@ -1,14 +1,11 @@
 import { createRoot } from 'react-dom/client';
-import { QueryClient } from '@tanstack/react-query';
-import { AppWithProviders } from './AppWithProviders';
+import { I18nextProvider } from 'react-i18next';
+import i18n from './i18n';
+import { Root } from './Root';
 import './index.css';
 
-// Create a client
-const queryClient = new QueryClient();
-
-// Render the app
-const rootElement = document.getElementById('root');
-if (!rootElement) throw new Error('Failed to find the root element');
-
-const root = createRoot(rootElement);
-root.render(<AppWithProviders queryClient={queryClient} />);
+createRoot(document.getElementById("root")!).render(
+  <I18nextProvider i18n={i18n}>
+    <Root />
+  </I18nextProvider>
+);
