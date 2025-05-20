@@ -114,20 +114,51 @@ const App = () => {
   // Create a state to track if PayPal is ready
   const [paypalReady, setPaypalReady] = useState(false);
 
-  // Load PayPal script in a way that doesn't block the app
+  // Load PayPal script with retry mechanism
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = `https://www.paypal.com/sdk/js?client-id=test&currency=EUR&intent=capture`;
-    script.async = true;
-    script.onload = () => setPaypalReady(true);
-    script.onerror = () => {
-      console.warn('Failed to load PayPal script');
-      setPaypalReady(false);
+    let retryCount = 0;
+    const maxRetries = 3;
+    let script: HTMLScriptElement | null = null;
+    let retryTimeout: NodeJS.Timeout;
+
+    const loadPayPal = () => {
+      // Remove any existing script first
+      if (script && document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+
+      script = document.createElement('script');
+      script.src = `https://www.paypal.com/sdk/js?client-id=test&currency=EUR&intent=capture&components=buttons&disable-funding=card`;
+      script.async = true;
+      
+      script.onload = () => {
+        console.log('PayPal script loaded successfully');
+        setPaypalReady(true);
+      };
+      
+      script.onerror = () => {
+        console.warn('Failed to load PayPal script');
+        if (retryCount < maxRetries) {
+          const delay = 1000 * Math.pow(2, retryCount); // Exponential backoff
+          retryCount++;
+          console.log(`Retrying PayPal script load (${retryCount}/${maxRetries}) in ${delay}ms`);
+          retryTimeout = setTimeout(loadPayPal, delay);
+        } else {
+          console.error('Max retries reached for PayPal script loading');
+          setPaypalReady(false);
+        }
+      };
+
+      document.body.appendChild(script);
     };
-    document.body.appendChild(script);
+
+    loadPayPal();
 
     return () => {
-      document.body.removeChild(script);
+      if (script && document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+      if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, []);
 

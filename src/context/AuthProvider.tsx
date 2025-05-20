@@ -258,18 +258,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     const checkAuth = async () => {
       console.log('[Auth] Starting auth check...');
+      
+      // Create a promise that will reject if the fetch takes too long
+      const authCheckPromise = new Promise<{ data: { session: Session | null }, error: Error | null }>((resolve, reject) => {
+        // Set a timeout for the auth check
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Auth check timeout'));
+        }, 10000); // 10s timeout for auth check
+
+        // Try to get the session
+        supabase.auth.getSession()
+          .then(({ data, error }) => {
+            clearTimeout(timeoutId);
+            if (error) {
+              reject(error);
+            } else {
+              resolve({ data, error: null });
+            }
+          })
+          .catch(error => {
+            clearTimeout(timeoutId);
+            reject(error);
+          });
+      });
+
       try {
-        const { data: { session: currentSession }, error } = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<{ data: { session: Session | null }, error: null }>((_, reject) => 
-            setTimeout(() => reject(new Error('Auth check timeout')), 10000) // 10s timeout for auth check
-          )
-        ]);
-        
-        if (error) {
-          console.error('[Auth] Error getting auth session:', error);
-          throw error;
-        }
+        const { data: { session: currentSession } } = await authCheckPromise;
         
         if (!isMounted) return;
         
