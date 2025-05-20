@@ -247,35 +247,40 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!user?.id || !courseId) return;
 
       try {
-        // Get course data with enrollments
-        const { data, error } = await supabase
+        // Get course data first
+        const { data: courseData, error: courseError } = await supabase
           .from('courses')
-          .select('*, enrollments!inner(*)')
+          .select('*')
           .eq('id', courseId)
           .single();
 
-        if (error) {
-          console.error('Error fetching course data:', error);
-          throw error;
+        if (courseError) {
+          console.error('Error fetching course data:', courseError);
+          throw courseError;
         }
 
-
-        const dbCourse = data as unknown as DBCourse;
-        
         // Check if user is the instructor
-        const isUserInstructor = dbCourse.instructor_id === user.id;
+        const isUserInstructor = courseData.instructor_id === user.id;
         
-        // Check if user is enrolled
-        const isUserEnrolled = dbCourse.enrollments?.some(
-          (enrollment) => enrollment.user_id === user.id
-        ) || false;
+        // Check if user is enrolled in a separate query
+        const { data: enrollmentData, error: enrollmentError } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('course_id', courseId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (enrollmentError) {
+          console.error('Error checking enrollment:', enrollmentError);
+          // Don't throw, just assume not enrolled
+        }
 
         // Update state
         setIsInstructor(isUserInstructor);
-        setIsEnrolled(isUserEnrolled || isUserInstructor);
+        setIsEnrolled(!!enrollmentData || isUserInstructor);
         
       } catch (error) {
-        console.error('Error checking enrollment:', error);
+        console.error('Error in checkEnrollment:', error);
         setError('Failed to check course enrollment status');
       }
     };
