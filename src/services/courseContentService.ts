@@ -3,21 +3,32 @@ import { CourseContent, CreateCourseContentPayload, CreateAssignmentPayload } fr
 
 export const courseContentService = {
   // Upload a file to Supabase Storage
-  async uploadFile(file: File, courseId: string, path: string = 'course-content'): Promise<{ path: string }> {
+  async uploadFile(file: File, courseId: string, path: string = 'course-content'): Promise<{ path: string; publicUrl: string }> {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
     const filePath = `${path}/${courseId}/${fileName}`;
 
     const { data, error } = await supabase.storage
       .from('course-files')
-      .upload(filePath, file);
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false
+      });
 
     if (error) {
       console.error('Error uploading file:', error);
       throw new Error(error.message);
     }
 
-    return { path: data.path };
+    // Get the public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('course-files')
+      .getPublicUrl(data.path);
+
+    return { 
+      path: data.path,
+      publicUrl
+    };
   },
 
   // Create course content
