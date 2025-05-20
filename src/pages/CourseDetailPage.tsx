@@ -130,9 +130,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   // Announcements state
   // Note: Announcements are now managed by the CourseAnnouncements component
   
-  // Extract course code from title
-  const codeMatch = course?.title?.match(/\[(.*?)\]/);
-  const courseCode = codeMatch ? codeMatch[1] : null;
+  // Clean up the title (remove any existing code in brackets)
   const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
   // Fetch course data
@@ -415,10 +413,12 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <div className="flex justify-between items-start">
                 <div>
-                  {courseCode && (
-                    <span className="inline-block bg-brown-light text-brown px-2 py-1 rounded text-sm font-medium mb-2">
-                      {courseCode}
-                    </span>
+                  {(isInstructor || isEnrolled) && course?.accessCode && (
+                    <div className="mb-2">
+                      <span className="inline-block bg-brown-light text-brown px-2 py-1 rounded text-sm font-medium">
+                        Access Code: {course.accessCode}
+                      </span>
+                    </div>
                   )}
                   <h1 className="text-2xl font-bold text-gray-900">{cleanTitle}</h1>
                   {course.description && (
