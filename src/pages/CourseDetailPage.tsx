@@ -215,8 +215,8 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     checkEnrollment();
   }, [user, courseId]);
 
-  const handleEnroll = async () => {
-    if (!user?.id || !courseId) {
+  const handleEnrollClick = () => {
+    if (!user?.id) {
       setError('Ju duhet të jeni të kyçur për t\'u regjistruar në një kurs');
       return;
     }
@@ -244,30 +244,58 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       });
       return;
     }
-
+    
+    // Show the access code form
+    setShowEnrollForm(true);
+  };
+  
+  const handleAccessCodeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!accessCode.trim()) {
+      toast({
+        title: 'Access Code Required',
+        description: 'Please enter the access code to enroll in this course.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    await handleEnroll(accessCode);
+  };
+  
+  const handleEnroll = async (code: string) => {
+    if (!user?.id || !courseId) {
+      setError('Ju duhet të jeni të kyçur për t\'u regjistruar në një kurs');
+      return;
+    }
+    
+    if (!course) {
+      setError('Kursi nuk u gjet');
+      return;
+    }
+    
     setIsEnrolling(true);
     
     try {
-      const enrollmentData = {
-        user_id: user.id,
-        course_id: courseId,
-        role: 'student',  // Required field
-        progress: 0,
-        completed: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
+      // First verify the access code
+      const { data: courseData, error: codeError } = await supabase
+        .from('courses')
+        .select('accessCode')
+        .eq('id', courseId)
+        .single();
+        
+      if (codeError) {
+        console.error('Error fetching course data:', codeError);
+        throw new Error('Failed to verify access code. Please try again.');
+      }
       
-      // Remove any undefined values to avoid RLS issues
-      Object.keys(enrollmentData).forEach(key => 
-        enrollmentData[key] === undefined && delete enrollmentData[key]
-      );
-
-      console.log('Attempting to enroll with data:', enrollmentData);
+      // Check if the access code matches (case-sensitive)
+      if (courseData?.accessCode && courseData.accessCode !== code) {
+        throw new Error('Invalid access code. Please check and try again.');
+      }
       
-      console.log('Attempting to insert enrollment with data:', JSON.stringify(enrollmentData, null, 2));
-      
-      // First check if the user is already enrolled
+      // Check if the user is already enrolled
       const { data: existingEnrollment, error: checkError } = await supabase
         .from('enrollments')
         .select('id')
@@ -284,7 +312,25 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
         throw new Error('You are already enrolled in this course.');
       }
       
-      // If not already enrolled, create new enrollment
+      // Prepare enrollment data
+      const enrollmentData = {
+        user_id: user.id,
+        course_id: courseId,
+        role: 'student',
+        progress: 0,
+        completed: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      // Remove any undefined values to avoid RLS issues
+      Object.keys(enrollmentData).forEach(key => 
+        enrollmentData[key] === undefined && delete enrollmentData[key]
+      );
+      
+      console.log('Attempting to enroll with data:', enrollmentData);
+      
+      // Create new enrollment
       const { data, error } = await supabase
         .from('enrollments')
         .insert(enrollmentData)
@@ -385,20 +431,47 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
                       You are the instructor of this course
                     </div>
                   ) : !isEnrolled ? (
-                    <Button 
-                      onClick={handleEnroll} 
-                      disabled={isEnrolling}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      {isEnrolling ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Enrolling...
-                        </>
+                    <>
+                      {showEnrollForm ? (
+                        <div className="space-y-4 bg-gray-50 p-4 rounded-md border border-gray-200">
+                          <h3 className="font-medium text-gray-900">Enter Access Code</h3>
+                          <form onSubmit={handleAccessCodeSubmit} className="flex space-x-2">
+                            <input
+                              type="text"
+                              value={accessCode}
+                              onChange={(e) => setAccessCode(e.target.value)}
+                              placeholder="Enter access code"
+                              className="flex-1 min-w-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-brown focus:border-brown sm:text-sm"
+                              disabled={isEnrolling}
+                            />
+                            <Button 
+                              type="submit"
+                              disabled={isEnrolling}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              {isEnrolling ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  Verifying...
+                                </>
+                              ) : (
+                                'Verify Code'
+                              )}
+                            </Button>
+                          </form>
+                          <p className="text-sm text-gray-500 mt-1">
+                            Please enter the access code provided by your instructor.
+                          </p>
+                        </div>
                       ) : (
-                        'Enroll in Course'
+                        <Button 
+                          onClick={handleEnrollClick}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          Enroll in Course
+                        </Button>
                       )}
-                    </Button>
+                    </>
                   ) : (
                     <div className="px-4 py-2 bg-green-100 text-green-800 rounded-md text-sm">
                       You are enrolled in this course

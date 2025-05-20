@@ -149,9 +149,10 @@ export function DashboardStudents() {
           
           // Process each enrollment
           for (const enrollment of course.enrollments) {
-            if (!enrollment.profiles || enrollment.profiles.length === 0) continue;
+            const profiles = Array.isArray(enrollment.profiles) ? enrollment.profiles : [enrollment.profiles];
+            if (!profiles || profiles.length === 0) continue;
             
-            const profile = Array.isArray(enrollment.profiles) ? enrollment.profiles[0] : enrollment.profiles;
+            const profile = profiles[0];
             
             // Skip if this is the instructor
             if (profile.id === course.instructor_id) continue;
@@ -166,7 +167,24 @@ export function DashboardStudents() {
                 .eq('course_id', courseId)
                 .maybeSingle();
               
-              if (gradeData) gradeInfo = gradeData;
+              if (gradeData) {
+                // Create a new grade info object with all required fields
+                // Using type assertion to handle the partial data from the database
+                const dbGrade = gradeData as Partial<StudentGrade>;
+                
+                gradeInfo = {
+                  id: dbGrade.id || '',
+                  user_id: dbGrade.user_id || enrollment.user_id,
+                  course_id: dbGrade.course_id || courseId || '',
+                  enrollment_id: enrollment.id, // Use the enrollment id from the enrollment object
+                  grade: dbGrade.grade ?? null,
+                  feedback: dbGrade.feedback ?? null,
+                  updated_by: dbGrade.updated_by,
+                  updated_at: dbGrade.updated_at ?? null,
+                  updated_by_name: dbGrade.updated_by_name ?? null,
+                  created_at: dbGrade.created_at || new Date().toISOString()
+                };
+              }
             }
             
             result.push({
