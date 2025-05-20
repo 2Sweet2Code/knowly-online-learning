@@ -185,7 +185,7 @@ const App = () => {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
                 <Route path="/courses/:courseId" element={<CourseDetailWrapper />} />
-                <Route path="/app/courses/:courseId/assignments/:assignmentId/submit" element={<SubmitAssignmentPage />} />
+                <Route path="/courses/:courseId/assignments/:assignmentId/submit" element={<SubmitAssignmentPage />} />
                 <Route path="/courses/:courseId/stream" element={<Navigate to="/courses/:courseId" replace />} />
                 <Route path="/my-space" element={<MySpacePage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
