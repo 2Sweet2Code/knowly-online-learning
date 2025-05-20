@@ -338,9 +338,6 @@ setUser({
     // Initial check
     void attemptFetch();
     
-    // Cleanup function
-    return cleanup;
-
     // Global timeout to prevent infinite loading
     const globalTimeout = setTimeout(() => {
       if (isMounted && !authInitialized) {
@@ -350,6 +347,13 @@ setUser({
         setIsLoading(false);
       }
     }, 8000); // 8 second timeout
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (globalTimeout) clearTimeout(globalTimeout);
+    };
     
     // Handle auth state changes after initial check
     const { data: authListener } = supabase.auth.onAuthStateChange(
