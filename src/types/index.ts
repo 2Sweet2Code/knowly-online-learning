@@ -19,19 +19,15 @@ export interface Course {
   category: 'programim' | 'dizajn' | 'marketing' | 'other';
   instructor: string;
   instructorId: string;
-  instructor_id?: string; // For database compatibility
   instructor_name?: string; // For displaying instructor's full name
-  instructorAvatar?: string;
   students: number;
   status: 'draft' | 'active' | 'archived';
   price: number;
   isPaid: boolean;
-  is_paid?: boolean; // For database compatibility
   created_at: string;
   updated_at: string;
-  accessCode?: string;
-  access_code?: string; // For database compatibility
-  allow_admin_applications?: boolean;
+  accessCode: string;
+  allow_admin_applications: boolean;
   enrollments?: Array<{
     id: string;
     user_id: string;

@@ -156,14 +156,14 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     students: number;
     status: string;
     price: number;
-    is_paid?: boolean;
+    isPaid: boolean;
     created_at: string;
     updated_at: string;
-    access_code?: string;
-    allow_admin_applications?: boolean;
+    accessCode: string;
+    allow_admin_applications: boolean;
   }
 
-  // Memoize the mapping function to prevent unnecessary re-renders
+  // Map database course to our frontend Course type
   const mapDbCourseToCourse = useCallback((dbCourse: DBCourseRow): Course => {
     const course: Course = {
       id: dbCourse.id,
@@ -173,16 +173,22 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       category: dbCourse.category as 'programim' | 'dizajn' | 'marketing' | 'other',
       instructor: dbCourse.instructor,
       instructorId: dbCourse.instructor_id,
-      students: dbCourse.students || 0,
+      instructor_name: dbCourse.instructor, // Will be updated later if available
+      students: dbCourse.students,
       status: (dbCourse.status as 'draft' | 'active' | 'archived') || 'draft',
-      price: dbCourse.price || 0,
-      isPaid: !!dbCourse.is_paid,
-      created_at: dbCourse.created_at || new Date().toISOString(),
-      updated_at: dbCourse.updated_at || new Date().toISOString(),
-      accessCode: dbCourse.access_code || undefined,
-      allow_admin_applications: !!dbCourse.allow_admin_applications
+      price: dbCourse.price,
+      isPaid: dbCourse.isPaid,
+      created_at: dbCourse.created_at,
+      updated_at: dbCourse.updated_at,
+      accessCode: dbCourse.accessCode,
+      allow_admin_applications: dbCourse.allow_admin_applications
     };
-    console.log('Mapped course:', course); // Debug log
+    
+    console.log('Mapped course:', {
+      ...course,
+      accessCode: dbCourse.accessCode ? '***' + dbCourse.accessCode.slice(-3) : 'undefined'
+    });
+    
     return course;
   }, []); // Empty dependency array since this function doesn't depend on any external values
 
@@ -193,28 +199,26 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!courseId) throw new Error('Course ID is required');
       
       try {
-        // First, get the basic course data
+        // First, get the basic course data with all required fields
         const { data: courseData, error: courseError } = await supabase
           .from('courses')
           .select('*')
           .eq('id', courseId)
           .single<DBCourseRow>();
           
+        if (courseData) {
+          console.log('Raw course data from DB:', {
+            ...courseData,
+            accessCode: courseData.accessCode ? '***' + courseData.accessCode.slice(-3) : 'undefined',
+            isPaid: courseData.isPaid
+          });
+        }
+          
         if (courseError) throw courseError;
         if (!courseData) throw new Error('Course not found');
         
         // Map database course to our Course type and add instructor name if available
-        const course: Course = {
-          ...mapDbCourseToCourse(courseData),
-          // Ensure these fields exist to prevent undefined errors
-          students: courseData.students || 0,
-          status: (courseData.status as 'active' | 'draft') || 'draft',
-          price: courseData.price || 0,
-          isPaid: !!courseData.is_paid,
-          accessCode: courseData.access_code, // Make sure access code is included
-          created_at: courseData.created_at || new Date().toISOString(),
-          updated_at: courseData.updated_at || new Date().toISOString(),
-        };
+        const course = mapDbCourseToCourse(courseData);
         
         console.log('Course data loaded:', course); // Debug log
         
