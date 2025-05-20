@@ -189,27 +189,39 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
   }, [courseId]);
 
   const handleLeaveClass = async () => {
-    if (!user || !courseId) return;
+    if (!user) return;
+    
+    // Confirm before leaving
+    const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs?');
+    if (!confirmLeave) return;
     
     setIsLeavingClass(true);
     
     try {
-      // Remove user from enrollments
-      const { error } = await supabase
+      // First, get the enrollment ID
+      const { data: enrollment, error: findError } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('course_id', courseId)
+        .single();
+        
+      if (findError) throw findError;
+      if (!enrollment) throw new Error('Enrollment not found');
+      
+      // Remove the enrollment using the ID
+      const { error: deleteError } = await supabase
         .from('enrollments')
         .delete()
-        .match({
-          user_id: user.id,
-          course_id: courseId
-        });
+        .eq('id', enrollment.id);
       
-      if (error) {
-        console.error('Error removing enrollment:', error);
-        throw error;
-      }
+      if (deleteError) throw deleteError;
       
       // Update local state
       setClassmates(prev => prev.filter(c => c.id !== user.id));
+      
+      // Invalidate the courses query to refresh the UI
+      await queryClient.invalidateQueries({ queryKey: ['courses'] });
       
       // Show success message
       toast({
@@ -218,15 +230,32 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         variant: 'default',
       });
       
-      // Update the course student count
+      // Update the course student count using a direct update
       try {
-        await supabase.rpc('decrement_student_count', {
-          course_id: courseId
-        });
+        // First get the current student count
+        const { data: course } = await supabase
+          .from('courses')
+          .select('students')
+          .eq('id', courseId)
+          .single();
+          
+        if (course) {
+          // Decrement the student count
+          await supabase
+            .from('courses')
+            .update({ students: Math.max(0, (course.students || 1) - 1) })
+            .eq('id', courseId);
+        }
       } catch (countError) {
         console.error('Error updating student count:', countError);
         // Not critical if this fails
       }
+      
+      // Invalidate queries to refresh the UI
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
+        queryClient.invalidateQueries({ queryKey: ['course', courseId] })
+      ]);
       
       // Redirect to courses page after a short delay
       setTimeout(() => {
