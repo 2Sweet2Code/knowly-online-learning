@@ -184,21 +184,26 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const handleSaveGrade = async (studentId: string, grade: number | null, feedback: string | null) => {
     if (!user) return;
     
-    const userId = studentId.replace('temp-', '');
     setSavingGrades(prev => ({ ...prev, [studentId]: true }));
     
     try {
-      console.log('Saving grade:', { userId, courseId, grade, feedback });
-      
       // Find the student in our list to get the correct profile ID
       const student = students.find(s => s.id === studentId);
       if (!student) {
         throw new Error('Student not found');
       }
 
+      console.log('Saving grade for student:', { 
+        studentId: student.id,
+        userId: student.user_id,
+        courseId,
+        grade,
+        feedback
+      });
+
       // Prepare the data to save using the profile ID
       const gradeData = {
-        user_id: student.user_id,  // Use the user_id from the student object
+        user_id: student.id,  // Use the profile ID as user_id
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
@@ -206,27 +211,17 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         updated_at: new Date().toISOString()
       };
       
-      console.log('Saving grade data:', gradeData);
+      console.log('Upserting grade data:', gradeData);
       
-      // First try to update the existing record using the correct profile ID
-      const { data: updateData, error: updateError } = await supabase
+      // Use upsert to handle both insert and update in a single operation
+      const { error: upsertError } = await supabase
         .from('student_grades')
-        .update(gradeData)
-        .eq('user_id', student.user_id)  // Use the profile ID from the student object
-        .eq('course_id', courseId)
-        .select();
+        .upsert(gradeData, {
+          onConflict: 'user_id,course_id',
+          ignoreDuplicates: false
+        });
       
-      // If no rows were updated, try to insert a new record
-      if (!updateData || updateData.length === 0) {
-        console.log('No existing grade found, inserting new record');
-        const { error: insertError } = await supabase
-          .from('student_grades')
-          .insert(gradeData);
-          
-        if (insertError) throw insertError;
-      } else if (updateError) {
-        throw updateError;
-      }
+      if (upsertError) throw upsertError;
       
       console.log('Grade saved successfully');
       
