@@ -31,30 +31,22 @@ export const CourseCard = ({ course }: CourseCardProps) => {
       }
 
       try {
-        // First, check if we already have the enrollments array with the course data
-        if (course.enrollments && Array.isArray(course.enrollments)) {
-          const isEnrolled = course.enrollments.some(
-            (enrollment: { user_id: string }) => enrollment.user_id === user.id
-          );
-          setIsEnrolled(isEnrolled);
+        // Always use a separate query to check enrollment
+        const { data, error } = await supabase
+          .from('enrollments')
+          .select('id')
+          .eq('course_id', course.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (error) {
+          console.error('Error checking enrollment:', error);
+          setIsEnrolled(false);
         } else {
-          // Fallback to a separate query if enrollments aren't included
-          const { data, error } = await supabase
-            .from('enrollments')
-            .select('id')
-            .eq('course_id', course.id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-            
-          if (error) {
-            console.error('Error checking enrollment:', error);
-            setIsEnrolled(false);
-          } else {
-            setIsEnrolled(!!data);
-          }
+          setIsEnrolled(!!data);
         }
       } catch (error) {
-        console.error('Error checking enrollment:', error);
+        console.error('Error in enrollment check:', error);
         setIsEnrolled(false);
       } finally {
         setIsLoading(false);
@@ -62,7 +54,7 @@ export const CourseCard = ({ course }: CourseCardProps) => {
     };
     
     checkEnrollment();
-  }, [user, course.id, course.enrollments, course.instructor_id]);
+  }, [user, course.id, course.instructor_id]);
   
   const isInstructor = course.instructor_id === user?.id;
   const showAccessCode = (isEnrolled || isInstructor) && !isLoading;
