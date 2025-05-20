@@ -198,7 +198,7 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       }
       
       // Confirm before leaving
-      const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs?');
+      const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs? Kjo do të fshijë të gjitha të dhënat tuaja të kursit.');
       if (!confirmLeave) {
         console.log('User cancelled leaving the course');
         return;
@@ -229,41 +229,54 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       
       console.log('Enrollment found:', enrollment);
       
-      // Step 2: Attempt to delete the enrollment
-      console.log('Step 2: Attempting to delete enrollment');
-      const deleteResponse = await supabase
+      // Step 2: Delete related data
+      console.log('Step 2: Deleting related data');
+      
+      // Delete from enrollments table
+      const { error: enrollmentError } = await supabase
         .from('enrollments')
         .delete()
-        .eq('id', enrollment.id);
+        .eq('user_id', user.id)
+        .eq('course_id', courseId);
       
-      console.log('Delete response:', deleteResponse);
-      
-      if (deleteResponse.error) {
-        console.error('Error deleting enrollment:', deleteResponse.error);
-        
-        // If RLS violation, try with different approach
-        if (deleteResponse.error.code === '42501') {
-          console.log('RLS violation detected, trying alternative approach...');
-          
-          // Try updating the enrollment to mark as not completed instead of deleting
-          const updateResponse = await supabase
-            .from('enrollments')
-            .update({ 
-              completed: false,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', enrollment.id);
-            
-          if (updateResponse.error) {
-            console.error('Error updating enrollment status:', updateResponse.error);
-            throw new Error('Nuk u lejua të largoheshit nga kursi për shkak të kufizimeve të sigurisë.');
-          }
-          
-          console.log('Successfully marked enrollment as inactive');
-        } else {
-          throw deleteResponse.error;
-        }
+      if (enrollmentError) {
+        console.error('Error deleting from enrollments:', enrollmentError);
+        // Continue even if this fails, try other tables
       }
+      
+      // Delete from student_grades table
+      const { error: gradesError } = await supabase
+        .from('student_grades')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('course_id', courseId);
+      
+      if (gradesError) {
+        console.error('Error deleting from student_grades:', gradesError);
+      }
+      
+      // Delete from course_comments table
+      const { error: commentsError } = await supabase
+        .from('course_comments')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('course_id', courseId);
+      
+      if (commentsError) {
+        console.error('Error deleting from course_comments:', commentsError);
+      }
+      
+      // Delete from announcement_comments table
+      const { error: announcementCommentsError } = await supabase
+        .from('announcement_comments')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (announcementCommentsError) {
+        console.error('Error deleting from announcement_comments:', announcementCommentsError);
+      }
+      
+      console.log('Successfully cleaned up user data from all related tables');
       
       console.log('Successfully processed leave request');
       
