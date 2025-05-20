@@ -246,52 +246,78 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isMounted = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [toast]);
+  }, []);
 
   // Initial auth check with retry mechanism
   React.useEffect(() => {
     let isMounted = true;
     let retryCount = 0;
     const maxRetries = 2;
+    let retryTimeout: NodeJS.Timeout | null = null;
+    let globalTimeout: NodeJS.Timeout | null = null;
     
     const checkAuth = async () => {
+      console.log('[Auth] Starting auth check...');
       try {
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        const { data: { session: currentSession }, error } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<{ data: { session: Session | null }, error: null }>((_, reject) => 
+            setTimeout(() => reject(new Error('Auth check timeout')), 10000) // 10s timeout for auth check
+          )
+        ]);
         
-        if (error) throw error;
+        if (error) {
+          console.error('[Auth] Error getting auth session:', error);
+          throw error;
+        }
+        
+        if (!isMounted) return;
+        
+        console.log('[Auth] Session state:', currentSession ? 'authenticated' : 'not authenticated');
+        setSession(currentSession);
+        
+        if (currentSession?.user) {
+          console.log('[Auth] User session found, fetching user data...');
+          try {
+            await fetchAndSetUser(currentSession.user.id);
+            console.log('[Auth] User data fetched successfully');
+          } catch (userError) {
+            console.error('[Auth] Error fetching user data:', userError);
+            // Continue even if user fetch fails
+          }
+        } else {
+          console.log('[Auth] No user session found');
+          setUser(null);
+        }
         
         if (isMounted) {
-          setSession(currentSession);
-          
-          if (currentSession?.user) {
-            try {
-              await fetchAndSetUser(currentSession.user.id);
-            } catch (userError) {
-              console.error('Error fetching user data:', userError);
-              // Continue even if user fetch fails
-            }
-          } else {
-            setUser(null);
-          }
-          
+          console.log('[Auth] Auth initialization complete');
           setAuthInitialized(true);
           setIsLoading(false);
         }
       } catch (error) {
-        console.error('Error during initial auth check:', error);
+        console.error('[Auth] Error during auth check:', error);
         
-        if (retryCount < maxRetries) {
+        if (isMounted && retryCount < maxRetries) {
           // Retry with exponential backoff
           const delay = 1000 * Math.pow(2, retryCount);
           retryCount++;
-          console.log(`Retrying auth check (${retryCount}/${maxRetries}) in ${delay}ms`);
-          setTimeout(checkAuth, delay);
+          console.log(`[Auth] Retrying auth check (${retryCount}/${maxRetries}) in ${delay}ms`);
+          
+          // Clear any existing timeout
+          if (retryTimeout) clearTimeout(retryTimeout);
+          
+          // Set a new timeout for the retry
+          retryTimeout = setTimeout(() => {
+            if (isMounted) checkAuth();
+          }, delay);
+          
           return;
         }
         
         // If we've exhausted retries, continue with unauthenticated state
         if (isMounted) {
-          console.warn('Max retries reached, continuing without authentication');
+          console.warn('[Auth] Max retries reached, continuing without authentication');
           setUser(null);
           setAuthInitialized(true);
           setIsLoading(false);
@@ -299,8 +325,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
     
-    // Set a timeout to prevent infinite loading
-    const timeoutId = setTimeout(() => {
+    // Initial check
+    checkAuth();
+    
+    // Set a global timeout to prevent infinite loading (30s)
+    globalTimeout = setTimeout(() => {
       if (isMounted && !authInitialized) {
         console.warn('Auth initialization timeout - forcing state update');
         setUser(null);
@@ -334,7 +363,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isMounted = false;
-      clearTimeout(timeoutId);
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (globalTimeout) clearTimeout(globalTimeout);
       authListener?.subscription.unsubscribe();
     };
   }, [fetchAndSetUser, authInitialized]);
