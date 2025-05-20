@@ -189,7 +189,7 @@ export function DashboardStudents() {
             
             result.push({
               id: enrollment.id,
-              student_id: enrollment.user_id,
+              student_id: profile.id,  // Use profile ID instead of enrollment.user_id
               student_name: profile?.name || 'Student pa emër',
               student_email: profile?.email || null,
               student_avatar: profile?.avatar_url || null,
