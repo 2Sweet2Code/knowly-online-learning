@@ -54,7 +54,30 @@ const createUserProfile = async (userId: string, name: string, role: string): Pr
   }
 };
 
+interface AuthState {
+  user: User | null;
+  session: Session | null;
+  isLoading: boolean;
+  authInitialized: boolean;
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [state, setState] = React.useState<AuthState>({
+    user: null,
+    session: null,
+    isLoading: true,
+    authInitialized: false,
+  });
+  
+  const { toast } = useToast();
+  
+  const setUser = (user: User | null) => setState(prev => ({ ...prev, user }));
+  const setSession = (session: Session | null) => setState(prev => ({ ...prev, session }));
+  const setIsLoading = (isLoading: boolean) => setState(prev => ({ ...prev, isLoading }));
+  const setAuthInitialized = (authInitialized: boolean) => 
+    setState(prev => ({ ...prev, authInitialized }));
+    
+  const { user, session, isLoading, authInitialized } = state;
   // State management
   const [session, setSession] = React.useState<Session | null>(null);
   const [user, setUser] = React.useState<User | null>(null);
@@ -98,9 +121,80 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
+    let retryCount = 0;
+    const maxRetries = 2;
     let timeoutId: NodeJS.Timeout | null = null;
     let isMounted = true;
-    let retryCount = 0;
+
+    const attemptFetch = async (): Promise<void> => {
+      if (!isMounted) return;
+      
+      try {
+        console.log(`[Auth] Fetching user data (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+
+        if (error) {
+          console.error('[Auth] Error fetching user profile:', error);
+          throw error;
+        }
+
+        if (!profile) {
+          console.warn('[Auth] No profile found for user:', userId);
+          if (isMounted) setUser(null);
+          return;
+        }
+
+
+        // Set the user data
+        if (isMounted) {
+          setUser({
+            id: profile.id,
+            email: profile.email || '',
+            name: profile.name || '',
+            role: profile.role || 'student',
+            avatar_url: profile.avatar_url || '',
+            created_at: profile.created_at || new Date().toISOString(),
+            updated_at: profile.updated_at || new Date().toISOString(),
+          });
+          setIsLoading(false);
+          console.log('[Auth] User data set successfully');
+        }
+      } catch (error) {
+        console.error('[Auth] Error in attemptFetch:', error);
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = 1000 * retryCount; // 1s, 2s, etc.
+          console.log(`[Auth] Retrying user fetch in ${delay}ms (${retryCount}/${maxRetries})`);
+          
+          return new Promise((resolve) => {
+            timeoutId = setTimeout(() => {
+              attemptFetch().then(resolve);
+            }, delay);
+          });
+        }
+        
+        console.error('[Auth] Max retries reached for user fetch');
+        if (isMounted) {
+          setUser(null);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    // Start the initial fetch
+    attemptFetch();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
     const maxRetries = 2;
     
     const attemptFetch = async (): Promise<void> => {
@@ -257,33 +351,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let globalTimeout: NodeJS.Timeout | null = null;
     
     const checkAuth = async () => {
+      if (!isMounted) return;
+      
       console.log('[Auth] Starting auth check...');
       
-      // Create a promise that will reject if the fetch takes too long
-      const authCheckPromise = new Promise<{ data: { session: Session | null }, error: Error | null }>((resolve, reject) => {
-        // Set a timeout for the auth check
-        const timeoutId = setTimeout(() => {
-          reject(new Error('Auth check timeout'));
-        }, 10000); // 10s timeout for auth check
-
-        // Try to get the session
-        supabase.auth.getSession()
-          .then(({ data, error }) => {
-            clearTimeout(timeoutId);
-            if (error) {
-              reject(error);
-            } else {
-              resolve({ data, error: null });
-            }
-          })
-          .catch(error => {
-            clearTimeout(timeoutId);
-            reject(error);
-          });
-      });
-
       try {
-        const { data: { session: currentSession } } = await authCheckPromise;
+        // Use a simple promise race with a timeout
+        const { data: { session: currentSession }, error } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<{ data: { session: Session | null }, error: null }>((_, reject) => 
+            setTimeout(() => reject(new Error('Auth check timeout')), 5000) // 5s timeout for initial check
+          )
+        ]);
+        
+        if (error) {
+          console.error('[Auth] Error getting session:', error);
+          throw error;
+        }
         
         if (!isMounted) return;
         
