@@ -157,7 +157,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!courseId) return null;
       
       try {
-        // First, get the basic course data
+        // First, get the basic course data without any joins
         const { data: courseData, error: courseError } = await supabase
           .from('courses')
           .select('*')
@@ -165,34 +165,61 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
           .single();
           
         if (courseError) throw courseError;
+        if (!courseData) {
+          throw new Error('Course not found');
+        }
         
         const dbCourse = courseData as unknown as DBCourse;
         
-        // Then check if user is enrolled in a separate query
+        // Check if user is enrolled and get user role in a separate query
         if (user) {
-          const { data: enrollmentData, error: enrollmentError } = await supabase
-            .from('enrollments')
-            .select('*')
-            .eq('course_id', courseId)
-            .eq('user_id', user.id)
-            .maybeSingle();
-            
-          if (enrollmentError) {
-            console.error('Error checking enrollment:', enrollmentError);
+          try {
+            const { data: enrollmentData, error: enrollmentError } = await supabase
+              .from('enrollments')
+              .select('*')
+              .eq('course_id', courseId)
+              .eq('user_id', user.id)
+              .maybeSingle();
+              
+            if (enrollmentError) {
+              console.error('Error checking enrollment:', enrollmentError);
+            } else if (enrollmentData) {
+              setIsEnrolled(true);
+              setIsInstructor(enrollmentData.role === 'instructor');
+              setIsAdmin(enrollmentData.role === 'admin');
+            } else {
+              // Check if user is the course instructor
+              const isUserInstructor = dbCourse.instructor_id === user.id;
+              setIsEnrolled(isUserInstructor);
+              setIsInstructor(isUserInstructor);
+              
+              // Check if user is an admin
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', user.id)
+                .single();
+                
+              if (profileData?.role === 'admin') {
+                setIsAdmin(true);
+              }
+            }
+          } catch (err) {
+            console.error('Error checking user role:', err);
           }
-          
-          // Check if user is instructor
-          const isUserInstructor = dbCourse.instructor_id === user.id;
-          
-          // Update enrollment status
-          setIsEnrolled(!!enrollmentData || isUserInstructor);
-          setIsInstructor(isUserInstructor);
         }
         
         // Convert to Course type
         const course: Course = {
           ...dbCourse,
           instructorId: dbCourse.instructor_id,
+          // Ensure these fields exist to prevent undefined errors
+          students: dbCourse.students || 0,
+          status: (dbCourse.status as 'active' | 'draft') || 'draft',
+          price: dbCourse.price || 0,
+          isPaid: !!dbCourse.isPaid,
+          created_at: dbCourse.created_at || new Date().toISOString(),
+          updated_at: dbCourse.updated_at || new Date().toISOString(),
         };
         
         return course;

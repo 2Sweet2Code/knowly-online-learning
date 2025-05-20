@@ -31,18 +31,20 @@ export const CourseCard = ({ course }: CourseCardProps) => {
       }
 
       try {
-        // Always use a separate query to check enrollment
+        // Check enrollment using the correct Supabase query
         const { data, error } = await supabase
           .from('enrollments')
-          .select('id')
+          .select('*')
           .eq('course_id', course.id)
           .eq('user_id', user.id)
           .maybeSingle();
           
         if (error) {
           console.error('Error checking enrollment:', error);
+          // If there's an error, we'll assume not enrolled to be safe
           setIsEnrolled(false);
         } else {
+          // If data exists, user is enrolled
           setIsEnrolled(!!data);
         }
       } catch (error) {
