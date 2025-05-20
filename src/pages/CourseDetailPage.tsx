@@ -251,17 +251,40 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       const enrollmentData = {
         user_id: user.id,
         course_id: courseId,
-        status: 'enrolled',
-        enrolled_at: new Date().toISOString(),
+        role: 'student',  // Required field
         progress: 0,
-        last_accessed: new Date().toISOString(),
         completed: false,
-        completion_date: null,
-        metadata: {}
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
+      
+      // Remove any undefined values to avoid RLS issues
+      Object.keys(enrollmentData).forEach(key => 
+        enrollmentData[key] === undefined && delete enrollmentData[key]
+      );
 
       console.log('Attempting to enroll with data:', enrollmentData);
       
+      console.log('Attempting to insert enrollment with data:', JSON.stringify(enrollmentData, null, 2));
+      
+      // First check if the user is already enrolled
+      const { data: existingEnrollment, error: checkError } = await supabase
+        .from('enrollments')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('course_id', courseId)
+        .maybeSingle();
+        
+      if (checkError) {
+        console.error('Error checking existing enrollment:', checkError);
+        throw checkError;
+      }
+      
+      if (existingEnrollment) {
+        throw new Error('You are already enrolled in this course.');
+      }
+      
+      // If not already enrolled, create new enrollment
       const { data, error } = await supabase
         .from('enrollments')
         .insert(enrollmentData)
@@ -270,6 +293,10 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
 
       if (error) {
         console.error('Detailed enrollment error:', error);
+        // Check if it's a unique violation
+        if (error.code === '23505') { // Unique violation
+          throw new Error('You are already enrolled in this course.');
+        }
         throw error;
       }
 
