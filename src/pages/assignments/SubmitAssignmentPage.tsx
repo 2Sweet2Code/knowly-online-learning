@@ -105,8 +105,8 @@ export const SubmitAssignmentPage = () => {
           </div>
         )}
 
-        {assignment.resources && (
-          <div className="prose max-w-none">
+{assignment.resources && (
+          <div className="prose max-w-none mb-6">
             <h3 className="text-lg font-medium text-gray-900 mb-2">Burime të dobishme:</h3>
             <div 
               className="prose prose-sm max-w-none text-gray-700"

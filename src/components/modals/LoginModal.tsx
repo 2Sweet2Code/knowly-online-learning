@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -14,15 +15,28 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [localLoading, setLocalLoading] = useState(false);
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  // Close modal if user becomes authenticated
+  // Handle redirection after successful login
   useEffect(() => {
     if (isAuthenticated && isOpen) {
+      // Close the modal first
       onClose();
+      
+      // Then redirect based on user role
+      if (user) {
+        const redirectPath = user.role === 'admin' ? '/dashboard' : 
+                           user.role === 'instructor' ? '/dashboard' : 
+                           '/my-space';
+        navigate(redirectPath);
+      } else {
+        // Fallback redirect if user object is not available
+        navigate('/');
+      }
     }
-  }, [isAuthenticated, isOpen, onClose]);
+  }, [isAuthenticated, isOpen, onClose, navigate, user]);
 
   if (!isOpen) return null;
 
@@ -62,8 +76,9 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-60"
+      className="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-60 transition-opacity duration-300"
       onClick={handleBackdropClick}
+      style={{ opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? 'auto' : 'none' }}
     >
       <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-8 relative animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <button 
