@@ -202,11 +202,11 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
       console.log('Saving grade data:', gradeData);
       
-      // First try to update the existing record
+      // First try to update the existing record using the correct profile ID
       const { data: updateData, error: updateError } = await supabase
         .from('student_grades')
         .update(gradeData)
-        .eq('user_id', userId)
+        .eq('user_id', student.user_id)  // Use the profile ID from the student object
         .eq('course_id', courseId)
         .select();
       
