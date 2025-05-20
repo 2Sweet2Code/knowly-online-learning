@@ -201,9 +201,20 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         feedback
       });
 
+      // First, verify the user exists in the profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', student.user_id)
+        .single();
+      
+      if (profileError || !profile) {
+        throw new Error('Student profile not found in the database');
+      }
+
       // Prepare the data to save using the profile ID
       const gradeData = {
-        user_id: student.user_id,  // Use the user_id from the student object
+        user_id: profile.id,  // Use the verified profile ID
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
@@ -214,24 +225,28 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       console.log('Upserting grade data:', gradeData);
       
       // First try to update the existing record
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from('student_grades')
         .update(gradeData)
-        .eq('user_id', student.user_id)
-        .eq('course_id', courseId);
+        .eq('user_id', profile.id)
+        .eq('course_id', courseId)
+        .select();
       
       // If no rows were updated, try to insert a new record
-      if (updateError || !updateError) {  // Check if update had an error or not
+      if (!updated || updated.length === 0) {
         const { error: insertError } = await supabase
           .from('student_grades')
           .insert(gradeData)
           .select();
         
-        // If we get a unique violation, it means the record already exists
-        // and our update should have worked, so we can ignore this error
-        if (insertError && !insertError.message.includes('duplicate key')) {
-          throw insertError;
+        if (insertError) {
+          // If it's a unique violation, it means the record already exists
+          if (!insertError.message.includes('duplicate key')) {
+            throw insertError;
+          }
         }
+      } else if (updateError) {
+        throw updateError;
       }
       
       console.log('Grade saved successfully');
