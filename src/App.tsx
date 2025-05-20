@@ -183,7 +183,7 @@ const App = () => {
   }, []);
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary context="Application root error">
       <QueryClientProvider client={queryClient}>
         <PayPalScriptProvider 
           options={{ 
@@ -195,11 +195,12 @@ const App = () => {
           }}
           deferLoading={true}
         >
-          <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
+          <ErrorBoundary context="Auth provider error">
+            <AuthProvider>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <BrowserRouter>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
@@ -229,17 +230,18 @@ const App = () => {
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
-                </BrowserRouter>
+                  </BrowserRouter>
               </TooltipProvider>
             </AuthProvider>
-      </PayPalScriptProvider>
-      {process.env.NODE_ENV === 'development' && (
-        <Suspense fallback={null}>
-          <ReactQueryDevtools />
-        </Suspense>
-      )}
-    </QueryClientProvider>
-  </ErrorBoundary>
+          </ErrorBoundary>
+        </PayPalScriptProvider>
+        {process.env.NODE_ENV === 'development' && (
+          <Suspense fallback={null}>
+            <ReactQueryDevtools />
+          </Suspense>
+        )}
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 
