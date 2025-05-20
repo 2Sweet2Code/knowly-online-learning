@@ -13,6 +13,7 @@ interface ContentFormProps {
     contentType: ContentType;
     contentUrl?: string;
     dueDate?: string;
+    resources?: string;
   };
   onSubmit: (data: {
     title: string;
@@ -21,6 +22,7 @@ interface ContentFormProps {
     file?: File | null;
     contentUrl?: string;
     dueDate?: string;
+    resources?: string;
   }) => Promise<void>;
   onCancel: () => void;
   isSubmitting: boolean;
@@ -42,6 +44,7 @@ export const ContentForm: React.FC<ContentFormProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [contentUrl, setContentUrl] = useState(initialData?.contentUrl || '');
   const [dueDate, setDueDate] = useState(initialData?.dueDate || '');
+  const [resources, setResources] = useState(initialData?.resources || '');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +55,7 @@ export const ContentForm: React.FC<ContentFormProps> = ({
       file,
       contentUrl: contentType === 'link' ? contentUrl : undefined,
       dueDate: contentType === 'assignment' ? dueDate : undefined,
+      resources: contentType === 'assignment' ? resources : undefined,
     });
   };
 
@@ -150,17 +154,34 @@ export const ContentForm: React.FC<ContentFormProps> = ({
           )}
 
           {contentType === 'assignment' && (
-            <div className="mt-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
-                Due Date
-              </label>
-              <Input
-                type="datetime-local"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                required={contentType === 'assignment'}
-                disabled={isSubmitting}
-              />
+            <div className="mt-2 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Due Date
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  required={contentType === 'assignment'}
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Burimet e Detyres (Opsionale)
+                </label>
+                <Textarea
+                  value={resources}
+                  onChange={(e) => setResources(e.target.value)}
+                  placeholder="Shtoni burime të dobishme për studentët (linkje, udhëzime, etj.)"
+                  rows={3}
+                  disabled={isSubmitting}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Mund të përdorni markdown për formatim të tekstit
+                </p>
+              </div>
             </div>
           )}
         </div>

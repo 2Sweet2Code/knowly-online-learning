@@ -77,6 +77,7 @@ export const CourseContentManager: React.FC<CourseContentManagerProps> = ({
     file?: File | null;
     contentUrl?: string;
     dueDate?: string;
+    resources?: string;
   }) => {
     if (!user?.id) return;
 
@@ -126,6 +127,7 @@ export const CourseContentManager: React.FC<CourseContentManagerProps> = ({
           title: data.title,
           description: data.description,
           due_date: data.dueDate,
+          resources: data.resources || '',
         });
 
         // Then create content item linked to the assignment

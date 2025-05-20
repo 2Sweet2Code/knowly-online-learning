@@ -22,6 +22,7 @@ export interface Assignment {
   title: string;
   description: string;
   due_date: string;
+  resources?: string;
   created_at: string;
   updated_at: string;
 }
@@ -46,4 +47,36 @@ export interface CreateAssignmentPayload {
   title: string;
   description: string;
   due_date: string;
+  resources?: string;
+}
+
+export interface AssignmentSubmission {
+  id: string;
+  assignment_id: string;
+  user_id: string;
+  submission_text?: string;
+  file_url?: string;
+  file_name?: string;
+  file_type?: string;
+  file_size?: number;
+  grade?: number;
+  feedback?: string;
+  submitted_at: string;
+  updated_at: string;
+}
+
+export interface CreateAssignmentSubmissionPayload {
+  assignment_id: string;
+  user_id: string;
+  submission_text?: string;
+  file_url?: string;
+  file_name?: string;
+  file_type?: string;
+  file_size?: number;
+}
+
+export interface UpdateAssignmentSubmissionPayload {
+  id: string;
+  grade?: number;
+  feedback?: string;
 }
