@@ -2,7 +2,7 @@ import * as React from 'react';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError, User as SupabaseUser } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
-import { AuthContext } from './auth-context';
+import { AuthContext, type AuthContextType } from './auth-context';
 
 // Import User type from the shared types
 import { User } from '@/types';
@@ -467,19 +467,56 @@ setUser({
   const signup = React.useCallback(signUp, [signUp]);
 
   // Only render children when auth is initialized to prevent race conditions
-  const contextValue = React.useMemo(() => ({
+  const contextValue = React.useMemo<AuthContextType>(() => ({
     user,
     session,
-    isAuthenticated: !!user && !!session,
     isLoading,
     authInitialized,
-    // Provide both naming conventions for backward compatibility
-    login,
-    signup,
-    logout,
+    isAuthenticated: !!user && !!session,
+    
+    // Authentication methods (new naming)
     signIn: login,
     signUp: signup,
     signOut: logout,
+    
+    // Authentication methods (old naming for backward compatibility)
+    login,
+    signup,
+    logout,
+    
+    // User management
+    updateUser: async (updates) => {
+      if (!user) return;
+      try {
+        const { data: updatedUser, error } = await supabase
+          .from('profiles')
+          .update(updates)
+          .eq('id', user.id)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        if (updatedUser) {
+          setUser({
+            ...user,
+            ...updatedUser,
+            user_metadata: {
+              ...user.user_metadata,
+              ...(updatedUser.user_metadata || {})
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Failed to update user:', error);
+        throw error;
+      }
+    },
+    
+    // State setters
+    setUser,
+    setSession,
+    setIsLoading,
+    setAuthInitialized,
   }), [
     user,
     session,
@@ -487,7 +524,11 @@ setUser({
     authInitialized,
     login,
     signup,
-    logout
+    logout,
+    setUser,
+    setSession,
+    setIsLoading,
+    setAuthInitialized
   ]);
 
   return (
