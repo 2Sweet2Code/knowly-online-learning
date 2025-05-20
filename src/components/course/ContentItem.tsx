@@ -1,6 +1,6 @@
 import React from 'react';
 import { CourseContent } from '@/types/course-content';
-import { File, Link as LinkIcon, FileText, GripVertical, Eye, EyeOff, Trash2 } from 'lucide-react';
+import { File, Link as LinkIcon, FileText, GripVertical, Eye, EyeOff, Trash2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Draggable } from 'react-beautiful-dnd';
 
@@ -71,12 +71,26 @@ export const ContentItem: React.FC<ContentItemProps> = ({
                   </a>
                 )}
                 {content.content_type === 'file' && content.file_name && (
-                  <div className="mt-2 text-sm text-gray-500">
-                    <span className="font-medium">File:</span> {content.file_name}
-                    {content.file_size && (
-                      <span className="ml-2 text-xs text-gray-400">
-                        ({(content.file_size / 1024).toFixed(1)} KB)
-                      </span>
+                  <div className="mt-2">
+                    <div className="text-sm text-gray-500">
+                      <span className="font-medium">File:</span> {content.file_name}
+                      {content.file_size && (
+                        <span className="ml-2 text-xs text-gray-400">
+                          ({(content.file_size / 1024).toFixed(1)} KB)
+                        </span>
+                      )}
+                    </div>
+                    {content.content_url && (
+                      <a
+                        href={content.content_url}
+                        download={content.file_name}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center text-sm text-blue-600 hover:underline"
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        Shkarko skedarin
+                      </a>
                     )}
                   </div>
                 )}

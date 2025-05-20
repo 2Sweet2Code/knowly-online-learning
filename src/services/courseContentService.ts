@@ -7,26 +7,27 @@ export const courseContentService = {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
     const filePath = `${path}/${courseId}/${fileName}`;
+    const bucketName = 'course-files';
 
-    const { data, error } = await supabase.storage
-      .from('course-files')
+    // Upload the file
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(bucketName)
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: false
       });
 
-    if (error) {
-      console.error('Error uploading file:', error);
-      throw new Error(error.message);
+    if (uploadError) {
+      console.error('Error uploading file:', uploadError);
+      throw new Error(uploadError.message);
     }
 
-    // Get the public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('course-files')
-      .getPublicUrl(data.path);
+    // Construct the public URL manually to ensure it's correct
+    const supabaseUrl = 'https://oemwaoaebmwdfrndohmh.supabase.co';
+    const publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucketName}/${uploadData.path}`;
 
     return { 
-      path: data.path,
+      path: uploadData.path,
       publicUrl
     };
   },
