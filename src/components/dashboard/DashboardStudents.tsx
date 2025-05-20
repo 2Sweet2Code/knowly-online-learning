@@ -84,102 +84,105 @@ export function DashboardStudents() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  // Query to fetch student enrollment data for instructor's courses
+  // Query to fetch instructor's courses and their enrollments
   const { data: studentData = [], isLoading, isError, error } = useQuery<InstructorStudentData[]>({
     queryKey: ['instructorStudents', user?.id],
     queryFn: async (): Promise<InstructorStudentData[]> => {
       if (!user?.id) return [];
 
       try {
-        // 1. Fetch instructor's courses
-        const { data: instructorCourses, error: coursesError } = await supabaseClient
+        // 1. Fetch instructor's courses with left join to enrollments
+        const { data, error: coursesError } = await supabaseClient
           .from('courses')
-          .select('id, title')
+          .select(`
+            id,
+            title,
+            enrollments (
+              id,
+              user_id,
+              created_at,
+              profiles (
+                id,
+                name,
+                email,
+                avatar_url
+              )
+            )
+          `)
           .eq('instructor_id', user.id);
 
         if (coursesError) {
           console.error("Error fetching instructor courses:", coursesError);
           throw new Error("Failed to fetch instructor's courses.");
         }
-        if (!instructorCourses || instructorCourses.length === 0) {
+        if (!data || data.length === 0) {
           return []; // Instructor has no courses
         }
 
-        const courseIds = instructorCourses.map(c => c.id);
-        const courseTitles = new Map(instructorCourses.map(c => [c.id, c.title]));
-
-        // 2. Fetch enrollments for these courses
-        const { data: enrollments, error: enrollmentsError } = await supabaseClient
-          .from('enrollments')
-          .select(`
-            id,
-            course_id,
-            user_id,
-            created_at,
-            profiles (
-              id,
-              name,
-              email,
-              avatar_url
-            )
-          `)
-          .in('course_id', courseIds);
-
-        if (enrollmentsError) {
-          console.error('Error fetching enrollments:', enrollmentsError);
-          throw new Error('Failed to fetch student enrollments');
-        }
-
-        if (!enrollments || enrollments.length === 0) {
-          return [];
-        }
-
-        // 3. Fetch grades for these enrollments
-        const enrollmentIds = enrollments.map(e => e.id);
-        const { data: grades, error: gradesError } = await supabaseClient
-          .from('student_grades')
-          .select('*')
-          .in('enrollment_id', enrollmentIds);
-
-        if (gradesError) {
-          console.error('Error fetching grades:', gradesError);
-          // Continue without grades
-        }
-
-        // Create a map of enrollment_id to grade
-        const gradesMap = new Map<string, StudentGrade>();
-        grades?.forEach(grade => {
-          if (grade.enrollment_id) {
-            gradesMap.set(grade.enrollment_id, grade);
+        // 2. Transform data to flatten the structure
+        const result: InstructorStudentData[] = [];
+        
+        for (const course of data) {
+          const courseId = course.id;
+          const courseTitle = course.title;
+          
+          // If there are no enrollments, add the course with null student data
+          if (!course.enrollments || course.enrollments.length === 0) {
+            result.push({
+              id: courseId,
+              student_id: '',
+              student_name: null,
+              student_email: null,
+              student_avatar: null,
+              course_id: courseId,
+              course_title: courseTitle,
+              enrollment_id: '',
+              enrolled_at: null,
+              grade: null,
+              feedback: null,
+              updated_at: null,
+              updated_by_name: null
+            });
+            continue;
           }
-        });
-
-        // 4. Transform data
-        const formattedData: InstructorStudentData[] = enrollments
-          .filter((enrollment): enrollment is EnrollmentWithProfile => {
-            return Array.isArray(enrollment.profiles) && enrollment.profiles.length > 0;
-          })
-          .map(enrollment => {
-            const gradeInfo = gradesMap.get(enrollment.id);
-            const [profile] = enrollment.profiles; // Get first profile from array
-            return {
+          
+          // Process each enrollment
+          for (const enrollment of course.enrollments) {
+            if (!enrollment.profiles || enrollment.profiles.length === 0) continue;
+            
+            const profile = Array.isArray(enrollment.profiles) ? enrollment.profiles[0] : enrollment.profiles;
+            
+            // Get grade if it exists
+            let gradeInfo: StudentGrade | null = null;
+            if (enrollment.id) {
+              const { data: gradeData } = await supabaseClient
+                .from('student_grades')
+                .select('*')
+                .eq('enrollment_id', enrollment.id)
+                .maybeSingle();
+              
+              if (gradeData) gradeInfo = gradeData;
+            }
+            
+            result.push({
               id: enrollment.id,
               student_id: enrollment.user_id,
               student_name: profile?.name || 'Student pa emër',
               student_email: profile?.email || null,
               student_avatar: profile?.avatar_url || null,
-              course_id: enrollment.course_id,
-              course_title: courseTitles.get(enrollment.course_id) || 'Kurs pa emër',
+              course_id: courseId,
+              course_title: courseTitle,
               enrollment_id: enrollment.id,
               enrolled_at: enrollment.created_at,
               grade: gradeInfo?.grade ?? null,
               feedback: gradeInfo?.feedback ?? null,
               updated_at: gradeInfo?.updated_at ?? null,
               updated_by_name: gradeInfo?.updated_by_name || null
-            };
-          });
-
-        return formattedData;
+            });
+          }
+        }
+        
+        return result;
       } catch (error) {
         console.error("Error in query function:", error);
         throw error;
