@@ -184,9 +184,15 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     try {
       console.log('Saving grade:', { userId, courseId, grade, feedback });
       
-      // Prepare the data to save
+      // Find the student in our list to get the correct profile ID
+      const student = students.find(s => s.id === studentId);
+      if (!student) {
+        throw new Error('Student not found');
+      }
+
+      // Prepare the data to save using the profile ID
       const gradeData = {
-        user_id: userId,
+        user_id: student.user_id,  // Use the user_id from the student object
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
