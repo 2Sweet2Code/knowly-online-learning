@@ -1,217 +1,277 @@
-import { useState } from 'react';
-import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, AlertCircle, User, Edit, Save } from 'lucide-react';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+"use client";
 
-type StudentGrade = {
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useToast } from '@/components/ui/use-toast';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useAuth } from '@/context/AuthContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { AlertCircle, Edit, Search, User, Save, Loader2, RefreshCw, Users, BookOpen } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Database } from '@/types/database.types';
+import { Skeleton } from '@/components/ui/skeleton';
+
+interface StudentGrade {
   id?: string;
   user_id: string;
   course_id: string;
+  enrollment_id: string;
   grade: number | null;
   feedback: string | null;
   updated_by?: string;
-  updated_at?: string;
-  updated_by_name?: string;
-};
-
-// Define a combined type for the fetched data
-interface InstructorStudentData {
-  enrollment_id: string;
-  student_id: string;
-  student_name: string | null;
-  student_email?: string | null;
-  student_avatar?: string | null;
-  course_id: string;
-  course_title: string | null;
-  enrolled_at: string | null;
-  grade?: number | null;
-  feedback?: string | null;
   updated_at?: string | null;
   updated_by_name?: string | null;
+  created_at?: string;
 }
 
-// Define a type that matches the expected result of the Supabase query
-type EnrollmentQueryResult = {
+interface InstructorStudentData {
   id: string;
-  created_at: string | null;
+  student_id: string;
+  student_name: string | null;
+  student_email: string | null;
+  student_avatar: string | null;
   course_id: string;
-  user_id: string;
-  courses: { title: string } | null;
-  profiles: { 
-    id: string; 
-    name: string | null; 
-    email: string | null; 
-    avatar_url: string | null;
-  } | null;
-  student_grades?: {
-    grade: number | null;
-    feedback: string | null;
-    updated_at: string | null;
-    updated_by_name?: string | null;
-  } | null;
+  course_title: string;
+  enrollment_id: string;
+  enrolled_at: string | null;
+  grade: number | null;
+  feedback: string | null;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}
+
+type Course = {
+  id: string;
+  title: string;
 };
 
-export const DashboardStudents = () => {
-  const { user } = useAuth();
+type Profile = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+};
+
+interface Enrollment {
+  id: string;
+  course_id: string;
+  user_id: string;
+  created_at: string;
+  courses: Course | null;
+  profiles: Profile[];
+}
+
+interface EnrollmentWithProfile extends Omit<Enrollment, 'profiles'> {
+  profiles: Profile[];
+}
+
+export function DashboardStudents() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedCourseFilter, setSelectedCourseFilter] = useState('all');
+  const supabase = createClientComponentClient<Database>();
+  
+  // State management
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('all');
   const [editingGrades, setEditingGrades] = useState<Record<string, boolean>>({});
   const [gradeInputs, setGradeInputs] = useState<Record<string, string>>({});
   const [feedbackInputs, setFeedbackInputs] = useState<Record<string, string>>({});
   const [savingGrades, setSavingGrades] = useState<Record<string, boolean>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Query to fetch student enrollment data for instructor's courses
-  const { 
-    data: studentData = [], 
-    isLoading, 
-    isError, 
-    error 
-  } = useQuery<InstructorStudentData[], Error>({
+  const { data: studentData = [], isLoading, isError, error } = useQuery<InstructorStudentData[]>({
     queryKey: ['instructorStudents', user?.id],
-    queryFn: async () => {
+    queryFn: async (): Promise<InstructorStudentData[]> => {
       if (!user?.id) return [];
 
-      // 1. Fetch IDs of courses taught by the instructor
-      const { data: instructorCourses, error: coursesError } = await supabase
-        .from('courses')
-        .select('id')
-        .eq('instructor_id', user.id);
+      try {
+        // 1. Fetch instructor's courses
+        const { data: instructorCourses, error: coursesError } = await supabase
+          .from('courses')
+          .select('id, title')
+          .eq('instructor_id', user.id);
 
-      if (coursesError) {
-        console.error("Error fetching instructor courses:", coursesError);
-        throw new Error("Failed to fetch instructor's courses.");
-      }
-      if (!instructorCourses || instructorCourses.length === 0) {
+        if (coursesError) {
+          console.error("Error fetching instructor courses:", coursesError);
+          throw new Error("Failed to fetch instructor's courses.");
+        }
+        if (!instructorCourses || instructorCourses.length === 0) {
           return []; // Instructor has no courses
-      }
+        }
 
-      const courseIds = instructorCourses.map(c => c.id);
-      console.log('Fetching enrollments for course IDs:', courseIds);
+        const courseIds = instructorCourses.map(c => c.id);
+        const courseTitles = new Map(instructorCourses.map(c => [c.id, c.title]));
 
-      if (courseIds.length === 0) {
-        console.log('No course IDs found, returning empty array');
-        return [];
-      }
+        // 2. Fetch enrollments for these courses
+        const { data: enrollments, error: enrollmentsError } = await supabase
+          .from('enrollments')
+          .select(`
+            id,
+            course_id,
+            user_id,
+            created_at,
+            profiles (
+              id,
+              name,
+              email,
+              avatar_url
+            )
+          `)
+          .in('course_id', courseIds);
 
-      // 2. Fetch enrollments for those courses, joining with profiles, courses, and grades
-      let query = supabase
-        .from('enrollments')
-        .select(`
-          id, 
-          created_at, 
-          course_id, 
-          user_id, 
-          courses!inner ( 
-            title 
-          ),
-          profiles!inner ( 
-            id, 
-            name, 
-            email,
-            avatar_url
-          ),
-          student_grades!left (
-            grade,
-            feedback,
-            updated_at,
-            updated_by_name:profiles!student_grades_updated_by_fkey(name)
-          )
-        `);
+        if (enrollmentsError) {
+          console.error('Error fetching enrollments:', enrollmentsError);
+          throw new Error('Failed to fetch student enrollments');
+        }
 
-      // Handle the case where there are multiple course IDs
-      if (courseIds.length > 0) {
-        query = query.in('course_id', courseIds);
-      } else {
-        // If no course IDs, return empty array
-        return [];
-      }
+        if (!enrollments || enrollments.length === 0) {
+          return [];
+        }
 
-      const { data: enrollments, error: enrollmentsError, status, statusText } = await query
-        .order('created_at', { ascending: false })
-        .returns<EnrollmentQueryResult[]>();
+        // 3. Fetch grades for these enrollments
+        const enrollmentIds = enrollments.map(e => e.id);
+        const { data: grades, error: gradesError } = await supabase
+          .from('student_grades')
+          .select('*')
+          .in('enrollment_id', enrollmentIds);
 
-      if (enrollmentsError) {
-        console.error("Error fetching enrollments:", {
-          error: enrollmentsError,
-          status,
-          statusText,
-          courseIds,
-          message: enrollmentsError.message,
-          details: enrollmentsError.details,
-          hint: enrollmentsError.hint,
-          code: enrollmentsError.code
+        if (gradesError) {
+          console.error('Error fetching grades:', gradesError);
+          // Continue without grades
+        }
+
+        // Create a map of enrollment_id to grade
+        const gradesMap = new Map<string, StudentGrade>();
+        grades?.forEach(grade => {
+          if (grade.enrollment_id) {
+            gradesMap.set(grade.enrollment_id, grade);
+          }
         });
-        throw new Error(`Failed to fetch student enrollments: ${enrollmentsError.message}`);
+
+        // 4. Transform data
+        const formattedData: InstructorStudentData[] = enrollments
+          .filter((enrollment): enrollment is EnrollmentWithProfile => {
+            return Array.isArray(enrollment.profiles) && enrollment.profiles.length > 0;
+          })
+          .map(enrollment => {
+            const gradeInfo = gradesMap.get(enrollment.id);
+            const [profile] = enrollment.profiles; // Get first profile from array
+            return {
+              id: enrollment.id,
+              student_id: enrollment.user_id,
+              student_name: profile?.name || 'Student pa emër',
+              student_email: profile?.email || null,
+              student_avatar: profile?.avatar_url || null,
+              course_id: enrollment.course_id,
+              course_title: courseTitles.get(enrollment.course_id) || 'Kurs pa emër',
+              enrollment_id: enrollment.id,
+              enrolled_at: enrollment.created_at,
+              grade: gradeInfo?.grade ?? null,
+              feedback: gradeInfo?.feedback ?? null,
+              updated_at: gradeInfo?.updated_at ?? null,
+              updated_by_name: gradeInfo?.updated_by_name || null
+            };
+          });
+
+        return formattedData;
+      } catch (error) {
+        console.error("Error in query function:", error);
+        throw error;
       }
-      
-      if (!enrollments) return [];
-
-      // 3. Transform data
-      const formattedData = enrollments
-           .map((enroll) => {
-             if (!enroll.profiles || !enroll.courses) {
-                 console.warn("Skipping enrollment due to missing profile or course join data:", enroll.id);
-                 return null;
-             }
-             
-             const gradeData = enroll.student_grades?.[0];
-             
-             const studentData: InstructorStudentData = {
-                 enrollment_id: enroll.id,
-                 student_id: enroll.profiles.id,
-                 student_name: enroll.profiles.name || 'Student pa emër',
-                 student_email: enroll.profiles.email || null,
-                 student_avatar: enroll.profiles.avatar_url || null,
-                 course_id: enroll.course_id,
-                 course_title: enroll.courses.title || 'Kurs pa emër',
-                 enrolled_at: enroll.created_at,
-                 grade: gradeData?.grade ?? null,
-                 feedback: gradeData?.feedback ?? null,
-                 updated_at: gradeData?.updated_at ?? null,
-                 updated_by_name: gradeData?.updated_by_name ?? null
-             };
-             
-             return studentData;
-           })
-           .filter((s): s is InstructorStudentData => s !== null);
-
-      return formattedData;
     },
     enabled: !!user?.id,
   });
 
-  // Get unique courses for the filter dropdown
-  const uniqueCourses = Array.from(
-    new Map(
-      studentData.map(s => [s.course_id, { id: s.course_id, title: s.course_title }])
-    ).values()
-  );
+  // Memoize derived data
+  const { uniqueCourses, filteredStudents, paginatedStudents, totalPages } = useMemo(() => {
+    // Get unique courses for the filter dropdown
+    const coursesMap = new Map<string, { id: string; title: string }>();
+    studentData.forEach(student => {
+      if (!coursesMap.has(student.course_id)) {
+        coursesMap.set(student.course_id, { 
+          id: student.course_id, 
+          title: student.course_title 
+        });
+      }
+    });
+    const uniqueCourses = Array.from(coursesMap.values());
 
-  // Filter and search students
-  const filteredStudents = studentData.filter(student => {
-    const matchesCourse = selectedCourseFilter === 'all' || student.course_id === selectedCourseFilter;
-    const matchesSearch = searchQuery === '' || 
-      student.student_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.student_email?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCourse && matchesSearch;
-  });
+    // Filter students based on search and course filter
+    const filtered = studentData.filter(student => {
+      const matchesCourse = selectedCourseFilter === 'all' || 
+                          student.course_id === selectedCourseFilter;
+      
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = searchQuery === '' || 
+        (student.student_name?.toLowerCase().includes(searchLower) ||
+         student.student_email?.toLowerCase().includes(searchLower));
+      
+      return matchesCourse && matchesSearch;
+    });
 
-  const handleViewProfile = (studentId: string) => {
+    // Pagination
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const paginated = filtered.slice(startIndex, startIndex + itemsPerPage);
+    const totalPages = Math.ceil(filtered.length / itemsPerPage);
+
+    return { 
+      uniqueCourses, 
+      filteredStudents: filtered,
+      paginatedStudents: paginated,
+      totalPages
+    };
+  }, [studentData, selectedCourseFilter, searchQuery, currentPage]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedCourseFilter, searchQuery]);
+
+  const handleViewProfile = useCallback((studentId: string) => {
     window.open(`/profile/${studentId}`, '_blank');
+  }, []);
+
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // Loading skeleton for student rows
+  const renderLoadingSkeletons = () => {
+    return Array(5).fill(0).map((_, index) => (
+      <tr key={`skeleton-${index}`} className="border-b">
+        <td className="p-4">
+          <div className="flex items-center space-x-3">
+            <Skeleton className="h-9 w-9 rounded-full" />
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+        </td>
+        <td className="p-4">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-32 mt-1" />
+        </td>
+        <td className="p-4">
+          <Skeleton className="h-9 w-20" />
+        </td>
+        <td className="p-4">
+          <Skeleton className="h-9 w-40" />
+        </td>
+        <td className="p-4 text-right">
+          <div className="flex justify-end space-x-2">
+            <Skeleton className="h-9 w-20" />
+            <Skeleton className="h-9 w-9" />
+          </div>
+        </td>
+      </tr>
+    ));
   };
 
   const handleGradeChange = (studentId: string, value: string) => {
@@ -249,9 +309,12 @@ export const DashboardStudents = () => {
       const gradeData = {
         user_id: studentId,
         course_id: student.course_id,
+        enrollment_id: student.enrollment_id,
         grade: grade,
         feedback: feedback || null,
-        updated_by: user.id
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+        updated_by_name: user.user_metadata?.full_name || 'Instructor'
       };
 
       let error;
@@ -260,8 +323,7 @@ export const DashboardStudents = () => {
       const { data: existingGrade } = await supabase
         .from('student_grades')
         .select('id')
-        .eq('user_id', studentId)
-        .eq('course_id', student.course_id)
+        .eq('enrollment_id', student.enrollment_id)
         .maybeSingle();
 
       if (existingGrade?.id) {
@@ -283,13 +345,13 @@ export const DashboardStudents = () => {
 
       // Update UI
       const updatedStudents = studentData.map(s => {
-        if (s.student_id === studentId && s.course_id === student.course_id) {
+        if (s.enrollment_id === student.enrollment_id) {
           return {
             ...s,
             grade,
             feedback: feedback || null,
-            updated_at: new Date().toISOString(),
-            updated_by_name: user.user_metadata?.full_name || 'Ju'
+            updated_at: gradeData.updated_at,
+            updated_by_name: gradeData.updated_by_name
           };
         }
         return s;
@@ -325,30 +387,34 @@ export const DashboardStudents = () => {
   };
 
   // --- Render Logic ---
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-brown" />
-        <span className="ml-2 text-lg">Po ngarkohen studentët...</span>
-      </div>
-    );
-  }
-
   if (isError) {
     return (
-       <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
-         <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
-         <h4 className="text-lg font-semibold text-red-700 mb-2">Gabim gjatë ngarkimit të studentëve</h4>
-         <p className="text-red-600 mb-4">
-           {error?.message || "Ndodhi një gabim i papritur."}
-         </p>
-         <button 
-           className="btn btn-secondary btn-sm"
-           onClick={() => queryClient.refetchQueries({ queryKey: ['instructorStudents', user?.id] })}
-         >
-           Provo Përsëri
-         </button>
-       </div>
+      <div className="text-center py-10 bg-red-50 border border-red-200 rounded-lg p-6">
+        <div className="flex flex-col items-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Gabim gjatë ngarkimit të të dhënave</h3>
+          <p className="text-red-600 mb-6 max-w-md">
+            {error?.message || "Ndodhi një gabim gjatë ngarkimit të listës së studentëve. Ju lutemi provoni përsëri më vonë."}
+          </p>
+          <div className="flex gap-4 justify-center">
+            <Button
+              variant="outline"
+              onClick={() => queryClient.refetchQueries({ queryKey: ['instructorStudents', user?.id] })}
+              className="border-red-300 text-red-700 hover:bg-red-50"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Provoni Përsëri
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => window.location.reload()}
+              className="text-red-700"
+            >
+              Rifresko Faqen
+            </Button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -411,24 +477,33 @@ export const DashboardStudents = () => {
                 <tbody className="[&_tr:last-child]:border-0">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={5} className="p-4 text-center">
-                        <div className="flex items-center justify-center space-x-2">
-                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                          <span>Duke ngarkuar...</span>
-                        </div>
+                      <td colSpan={5}>
+                        {renderLoadingSkeletons()}
                       </td>
                     </tr>
-                  ) : isError ? (
+                  ) : filteredStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-4 text-center text-destructive">
-                        <div className="flex items-center justify-center space-x-2">
-                          <AlertCircle className="h-5 w-5" />
-                          <span>Gabim: {error?.message || 'Ndodhi një gabim gjatë ngarkimit'}</span>
+                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                        <div className="flex flex-col items-center justify-center space-y-4">
+                          <Users className="h-12 w-12 text-gray-300" />
+                          <div>
+                            <h4 className="text-lg font-medium text-gray-700">
+                              {studentData.length === 0 
+                                ? "Nuk keni studentë të regjistruar në kurset tuaja."
+                                : "Nuk u gjetën studentë që përputhen me kërkimin tuaj."
+                              }
+                            </h4>
+                            {studentData.length === 0 && (
+                              <p className="text-sm text-gray-500 mt-2">
+                                Studentët të cilët regjistrohen në kurset tuaja do të shfaqen këtu.
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredStudents.length > 0 ? (
-                    filteredStudents.map((student) => (
+                  ) : (
+                    paginatedStudents.map((student) => (
                       <tr key={`${student.student_id}-${student.course_id}`} className="border-b transition-colors hover:bg-muted/50">
                         <td className="p-4 align-middle">
                           <div className="flex items-center space-x-3">
@@ -542,22 +617,97 @@ export const DashboardStudents = () => {
                         </td>
                       </tr>
                     ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                        {studentData.length === 0
-                          ? "Nuk keni studentë të regjistruar në kurset tuaja."
-                          : "Nuk u gjetën studentë që përputhen me kërkimin tuaj."
-                        }
-                      </td>
-                    </tr>
                   )}
                 </tbody>
               </table>
+              
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-6 py-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Shfaqen <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> deri në{' '}
+                    <span className="font-medium">
+                      {Math.min(currentPage * itemsPerPage, filteredStudents.length)}
+                    </span>{' '}
+                    nga <span className="font-medium">{filteredStudents.length}</span> studentë
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      Paraardhësi
+                    </Button>
+                    <div className="flex items-center space-x-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        // Show first, last, current, and adjacent pages
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={pageNum === currentPage ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => handlePageChange(pageNum)}
+                            className={pageNum === currentPage ? "font-bold" : ""}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {totalPages > 5 && currentPage < totalPages - 2 && (
+                        <span className="px-2 text-muted-foreground">...</span>
+                      )}
+                      {totalPages > 5 && currentPage < totalPages - 2 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePageChange(totalPages)}
+                        >
+                          {totalPages}
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      Tjetri
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
+      
+      {/* Empty state for no courses */}
+      {!isLoading && uniqueCourses.length === 0 && (
+        <div className="text-center py-16 border rounded-lg bg-muted/50">
+          <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium text-muted-foreground">Nuk keni kurse aktive</h3>
+          <p className="text-muted-foreground mt-2">
+            Kur të keni studentë të regjistruar në kurset tuaja, ata do të shfaqen këtu.
+          </p>
+          <Button className="mt-4" onClick={() => window.location.href = '/instructor/courses'}>
+            Shiko Kurset e Mia
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
