@@ -33,11 +33,11 @@ export const AssignmentsSection = ({ courseId }: AssignmentsSectionProps) => {
   
   useEffect(() => {
     const fetchData = async () => {
-      if (!user?.id) return;
-      
       setLoading(true);
+      setError(null);
+      
       try {
-        // Fetch assignments
+        // Fetch assignments (available to all users, including unauthenticated)
         const { data: assignmentsData, error: assignmentsError } = await supabase
           .from('assignments')
           .select('*')
@@ -47,24 +47,26 @@ export const AssignmentsSection = ({ courseId }: AssignmentsSectionProps) => {
         if (assignmentsError) throw assignmentsError;
         setAssignments(assignmentsData || []);
 
-        // Fetch submissions for these assignments
-        const assignmentIds = assignmentsData?.map(a => a.id) || [];
-        if (assignmentIds.length > 0) {
-          const { data: submissionsData, error: submissionsError } = await supabase
-            .from('assignment_submissions')
-            .select('*')
-            .in('assignment_id', assignmentIds)
-            .eq('user_id', user.id);
+        // Only fetch submissions if user is authenticated
+        if (user?.id) {
+          const assignmentIds = assignmentsData?.map(a => a.id) || [];
+          if (assignmentIds.length > 0) {
+            const { data: submissionsData, error: submissionsError } = await supabase
+              .from('assignment_submissions')
+              .select('*')
+              .in('assignment_id', assignmentIds)
+              .eq('user_id', user.id);
 
-          if (submissionsError) throw submissionsError;
-          
-          // Convert submissions array to an object keyed by assignment_id
-          const submissionsMap = (submissionsData || []).reduce((acc, submission) => ({
-            ...acc,
-            [submission.assignment_id]: submission
-          }), {} as Record<string, AssignmentSubmission>);
-          
-          setSubmissions(submissionsMap);
+            if (submissionsError) throw submissionsError;
+            
+            // Convert submissions array to an object keyed by assignment_id
+            const submissionsMap = (submissionsData || []).reduce((acc, submission) => ({
+              ...acc,
+              [submission.assignment_id]: submission
+            }), {} as Record<string, AssignmentSubmission>);
+            
+            setSubmissions(submissionsMap);
+          }
         }
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -89,6 +91,29 @@ export const AssignmentsSection = ({ courseId }: AssignmentsSectionProps) => {
         </div>
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Show login prompt for unauthenticated users
+  if (!user) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold">Detyrat</h2>
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                Ju duhet të jeni të kyçur për të parë detyrat tuaja dhe për të dorëzuar detyra të reja.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -189,11 +214,13 @@ export const AssignmentsSection = ({ courseId }: AssignmentsSectionProps) => {
               </div>
               
               <div className="ml-4 flex-shrink-0">
-                <Link to={`/courses/${courseId}/assignments/${assignment.id}/submit`}>
-                  <Button variant="outline">
-                    {submissions[assignment.id] ? 'Shiko Dorëzimin' : 'Dorëzo Detyrën'}
-                  </Button>
-                </Link>
+                {user?.role === 'student' && (
+                  <Link to={`/courses/${courseId}/assignments/${assignment.id}/submit`}>
+                    <Button variant="outline">
+                      {submissions[assignment.id] ? 'Shiko Dorëzimin' : 'Dorëzo Detyrën'}
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </li>
