@@ -2,7 +2,7 @@ import { createContext } from 'react';
 import { User } from '../types';
 import { Session } from '@supabase/supabase-js';
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   session: Session | null;
   isAuthenticated: boolean;
@@ -12,6 +12,4 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
-
-export { AuthContext, type AuthContextType };
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
