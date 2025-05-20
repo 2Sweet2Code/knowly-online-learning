@@ -184,23 +184,8 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     try {
       console.log('Saving grade:', { userId, courseId, grade, feedback });
       
-      // First check if a grade already exists
-      const { data: existingGrade, error: fetchError } = await supabase
-        .from('student_grades')
-        .select('id, updated_by, updated_at')
-        .eq('user_id', userId)
-        .eq('course_id', courseId)
-        .maybeSingle();
-      
-      // If we get a 406 error, it means the table exists but we don't have permission
-      // or there's a schema mismatch. We'll try to upsert anyway.
-      if (fetchError && fetchError.code !== 'PGRST116' && fetchError.code !== '406') {
-        throw fetchError;
-      }
-      
-      // Prepare the data to upsert
+      // Prepare the data to save
       const gradeData = {
-        id: existingGrade?.id || undefined, // Let the database generate a new ID if needed
         user_id: userId,
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
@@ -209,35 +194,26 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         updated_at: new Date().toISOString()
       };
       
-      console.log('Upserting grade data:', gradeData);
+      console.log('Saving grade data:', gradeData);
       
-      // Use upsert to handle both insert and update in one operation
-      const { error: upsertError } = await supabase
+      // First try to update the existing record
+      const { data: updateData, error: updateError } = await supabase
         .from('student_grades')
-        .upsert(gradeData, {
-          onConflict: 'user_id,course_id',
-          ignoreDuplicates: false
-        });
+        .update(gradeData)
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .select();
       
-      if (upsertError) {
-        // If we get a 409 error, it might be due to a unique constraint violation
-        // Let's try to update the existing record
-        if (upsertError.code === '23505' || upsertError.code === '23514') {
-          const { error: updateError } = await supabase
-            .from('student_grades')
-            .update({
-              grade: grade !== null ? Number(grade) : null,
-              feedback: feedback || null,
-              updated_by: user.id,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', userId)
-            .eq('course_id', courseId);
-            
-          if (updateError) throw updateError;
-        } else {
-          throw upsertError;
-        }
+      // If no rows were updated, try to insert a new record
+      if (!updateData || updateData.length === 0) {
+        console.log('No existing grade found, inserting new record');
+        const { error: insertError } = await supabase
+          .from('student_grades')
+          .insert(gradeData);
+          
+        if (insertError) throw insertError;
+      } else if (updateError) {
+        throw updateError;
       }
       
       console.log('Grade saved successfully');
