@@ -253,7 +253,6 @@ const App = () => {
         <ErrorBoundary context="Auth provider error">
           <AuthProvider>
             <TooltipProvider>
-              <Toaster />
               <Sonner />
               <BrowserRouter>
               <Routes>
