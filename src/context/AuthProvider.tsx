@@ -407,38 +407,68 @@ setUser({
     try {
       setIsLoading(true);
       
-      // Create user in auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      // First, check if user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single();
+      
+      if (existingUser) {
+        throw new Error('A user with this email already exists');
+      }
+      
+      // Create user in the database
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert([
+          { 
+            name, 
+            email, 
+            password: password, // In a real app, you should hash this password
+            role 
+          },
+        ])
+        .select()
+        .single();
+      
+      if (createError) throw createError;
+      if (!newUser) throw new Error('Failed to create user');
+      
+      // Create a session for the new user
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          data: {
-            name,
-            role,
-          },
-        },
       });
-
-      if (signUpError) throw signUpError;
-      if (!authData.user) throw new Error('Failed to create user');
-
-      // Create user profile
-      const profile = await createUserProfile(authData.user.id, name, role);
-      if (profile) {
-        setUser(profile);
-      }
+      
+      if (signInError) throw signInError;
+      
+      // Set the user in the auth context
+      setUser({
+        id: newUser.id.toString(),
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role as 'student' | 'instructor' | 'admin',
+        user_metadata: {
+          name: newUser.name,
+          role: newUser.role,
+          full_name: newUser.name,
+          avatar_url: ''
+        }
+      });
+      
     } catch (error) {
       console.error('Signup error:', error);
       toast({
-        title: 'Signup failed',
-        description: getErrorMessage(error),
+        title: 'Regjistrimi dështoi',
+        description: formatErrorMessage(error),
         variant: 'destructive',
       });
       throw error;
     } finally {
       setIsLoading(false);
     }
-  }, [getErrorMessage, setIsLoading, setUser]);
+  }, [formatErrorMessage, setIsLoading, setUser]);
 
   // Logout function
   const signOut = React.useCallback(async () => {
@@ -520,6 +550,7 @@ setUser({
     setSession,
     setIsLoading,
     setAuthInitialized,
+    formatErrorMessage
   }), [
     user,
     session,
@@ -531,7 +562,8 @@ setUser({
     setUser,
     setSession,
     setIsLoading,
-    setAuthInitialized
+    setAuthInitialized,
+    formatErrorMessage
   ]);
 
   return (
