@@ -69,45 +69,61 @@ const createQueryClient = () => {
   });
 };
 
+// Wrap the app in a try-catch to prevent crashes during initialization
 const App = () => {
   // Create a new QueryClient instance for each app render
   // This prevents shared mutable state issues during hot reloads
-  const [queryClient] = useState(() => createQueryClient());
+  const [queryClient] = useState(() => {
+    try {
+      return createQueryClient();
+    } catch (error) {
+      console.error('Failed to create QueryClient:', error);
+      // Return a basic client as fallback
+      return new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: 0,
+            refetchOnWindowFocus: false,
+          },
+        },
+      });
+    }
+  });
+  
+  // Track initialization state
+  const [initializationError, setInitializationError] = useState<Error | null>(null);
   
   // Add a global error handler for unhandled promise rejections and other errors
-  // This helps prevent white screens when there are initialization errors
   useEffect(() => {
     // Handler for unhandled promise rejections
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('UNHANDLED PROMISE REJECTION:', event.reason);
       // Prevent the error from causing a white screen
       event.preventDefault();
+      event.stopPropagation();
     };
     
     // Handler for uncaught errors
     const handleError = (event: ErrorEvent) => {
-      // Check if it's a temporal dead zone error (initialization error)
-      if (event.error && event.error.toString().includes("Cannot access") && 
-          event.error.toString().includes("before initialization")) {
-        console.error('INITIALIZATION ERROR CAUGHT:', event.error);
-        // Prevent the error from causing a white screen
-        event.preventDefault();
-        
-        // Optional: Show a user-friendly message in the console
-        console.info('An initialization error occurred. This has been handled to prevent a white screen.');
-      } else {
-        console.error('UNCAUGHT ERROR:', event.error);
-        event.preventDefault();
+      // Log the error but prevent it from propagating
+      console.error('UNCAUGHT ERROR:', event.error);
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // If this is an initialization error, store it to show a fallback UI
+      if (event.error && (event.error.toString().includes("Cannot access") || 
+          event.error.toString().includes("before initialization"))) {
+        setInitializationError(event.error);
       }
     };
     
-    // Add the event listeners
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    // Add the event listeners with capture to catch more errors
+    window.addEventListener('unhandledrejection', handleUnhandledRejection, true);
     window.addEventListener('error', handleError, true);
     
     // Clean up
     return () => {
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection, true);
       window.removeEventListener('error', handleError, true);
     };
   }, []);
@@ -115,15 +131,21 @@ const App = () => {
   // Create a state to track if PayPal is ready
   const [paypalReady, setPaypalReady] = useState(false);
 
-  // Load courses on component mount
+  // Load courses on component mount with better error handling
   useEffect(() => {
+    let isMounted = true;
+    
     const loadCourses = async () => {
+      if (!isMounted) return;
+      
       try {
         console.log('Starting to load courses...');
         const courses = await safeCheckCourses();
-        console.log('Courses loaded successfully. Count:', courses.length);
+        if (isMounted) {
+          console.log('Courses loaded successfully. Count:', courses.length);
+        }
       } catch (error) {
-        // This should theoretically never happen due to safeCheckCourses
+        // Log but don't crash the app
         console.warn('Unexpected error in course loading:', error);
       }
     };
@@ -131,7 +153,10 @@ const App = () => {
     // Use a small timeout to prevent blocking the initial render
     const timer = setTimeout(loadCourses, 100);
     
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Load PayPal script with retry mechanism
@@ -181,6 +206,37 @@ const App = () => {
       if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, []);
+
+  // Render a fallback UI if there was an initialization error
+  if (initializationError) {
+    return (
+      <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+        <h1>Application Error</h1>
+        <p>Sorry, something went wrong during initialization.</p>
+        <p>Please try refreshing the page or contact support if the problem persists.</p>
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#3b82f6',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.25rem',
+            cursor: 'pointer',
+            marginTop: '1rem'
+          }}
+        >
+          Refresh Page
+        </button>
+        {process.env.NODE_ENV === 'development' && (
+          <div style={{ marginTop: '2rem', padding: '1rem', background: '#fef2f2', color: '#991b1b' }}>
+            <h3>Debug Information:</h3>
+            <pre>{initializationError.toString()}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary context="Application root error">
