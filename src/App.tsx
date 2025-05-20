@@ -31,7 +31,7 @@ import { DashboardAnalytics } from "./components/dashboard/DashboardAnalytics";
 import { DashboardSettings } from "./components/dashboard/DashboardSettings";
 
 // Import debug utility
-import { checkCourses } from './utils/checkCourses';
+import { safeCheckCourses } from './utils/checkCourses';
 import { DashboardUserManagement } from "./components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { SubmitAssignmentPage } from "./pages/assignments/SubmitAssignmentPage";
@@ -119,14 +119,19 @@ const App = () => {
   useEffect(() => {
     const loadCourses = async () => {
       try {
-        const courses = await checkCourses();
-        console.log('Courses loaded:', courses);
+        console.log('Starting to load courses...');
+        const courses = await safeCheckCourses();
+        console.log('Courses loaded successfully. Count:', courses.length);
       } catch (error) {
-        console.error('Error loading courses:', error);
+        // This should theoretically never happen due to safeCheckCourses
+        console.warn('Unexpected error in course loading:', error);
       }
     };
 
-    loadCourses();
+    // Use a small timeout to prevent blocking the initial render
+    const timer = setTimeout(loadCourses, 100);
+    
+    return () => clearTimeout(timer);
   }, []);
 
   // Load PayPal script with retry mechanism

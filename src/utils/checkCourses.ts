@@ -1,46 +1,71 @@
-import { supabase } from '@/integrations/supabase/client';
+interface Course {
+  id: string;
+  // Add other course properties as needed
+  [key: string]: unknown;
+}
 
 /**
- * Fetches all courses from the database
- * @returns {Promise<Array>} Array of courses or empty array if error occurs
+ * Safely fetches all courses from the database
+ * This function is designed to never throw errors and always return an array
+ * @returns {Promise<Course[]>} Array of courses or empty array if any error occurs
  */
-export async function checkCourses() {
+export async function checkCourses(): Promise<Course[]> {
+  // Use a try-catch at the top level to ensure no errors escape
   try {
-    console.log('Checking courses in the database...');
+    // Dynamic import to prevent circular dependencies and ensure Supabase is initialized
+    const { supabase } = await import('@/integrations/supabase/client');
     
     if (!supabase) {
-      console.warn('Supabase client is not initialized');
+      console.warn('Supabase client is not available');
+      return [];
+    }
+
+    console.log('Checking courses in the database...');
+    
+    try {
+      // Get session with error handling
+      const { data: session, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.warn('Session error (non-critical):', sessionError.message);
+        // Continue even if session check fails
+      } else {
+        console.log('Session status:', session?.session ? 'Authenticated' : 'Not authenticated');
+      }
+      
+      // Query courses with error handling
+      const { data: courses, error } = await supabase
+        .from('courses')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.warn('Database query warning:', error.message);
+        return [];
+      }
+      
+      const courseCount = Array.isArray(courses) ? courses.length : 0;
+      console.log(`Successfully loaded ${courseCount} courses from the database`);
+      
+      return courses || [];
+      
+    } catch (dbError) {
+      console.warn('Database operation warning:', dbError instanceof Error ? dbError.message : 'Unknown database error');
       return [];
     }
     
-    // First, check if we can connect to Supabase
-    const { data: session, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError) {
-      console.error('Error getting session:', sessionError);
-      return [];
-    }
-    
-    console.log('Session:', session);
-    
-    // Query all courses
-    const { data: courses, error } = await supabase
-      .from('courses')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching courses:', error);
-      return [];
-    }
-    
-    console.log(`Found ${courses?.length || 0} courses in the database`);
-    
-    return courses || [];
   } catch (error) {
-    console.error('Unexpected error in checkCourses:', error);
+    // This should theoretically never be reached due to inner try-catch
+    console.warn('Unexpected error in checkCourses (outer):', error instanceof Error ? error.message : 'Unknown error');
     return [];
   }
 }
 
-// Export the function without immediately executing it
+// Export a safer version of the function that can't throw
+export const safeCheckCourses = async (): Promise<Course[]> => {
+  try {
+    return await checkCourses();
+  } catch (e) {
+    return [];
+  }
+};
