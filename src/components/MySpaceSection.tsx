@@ -1,6 +1,6 @@
 
 import { Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { GraduationCap, BookOpen, Star, AlertCircle, Calendar, Info } from "lucide-react";

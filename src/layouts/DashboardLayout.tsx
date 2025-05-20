@@ -3,7 +3,7 @@ import { Footer } from "../components/Footer";
 import { Header } from "../components/Header";
 import { DashboardSidebar } from "../components/dashboard/DashboardSidebar";
 import { CreateCourseModal } from "../components/modals/CreateCourseModal";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 // Import Outlet for rendering nested routes
 import { Navigate, Outlet } from "react-router-dom"; 
 

@@ -18,16 +18,17 @@ export interface Course {
   image: string;
   category: 'programim' | 'dizajn' | 'marketing' | 'other';
   instructor: string;
+  instructor_id: string;
   instructorId: string;
   instructor_name?: string; // For displaying instructor's full name
   students: number;
   status: 'draft' | 'active' | 'archived';
   price: number;
   isPaid: boolean;
+  accessCode?: string;
+  allow_admin_applications: boolean;
   created_at: string;
   updated_at: string;
-  accessCode: string;
-  allow_admin_applications: boolean;
   enrollments?: Array<{
     id: string;
     user_id: string;

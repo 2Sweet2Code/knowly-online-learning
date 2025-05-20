@@ -4,7 +4,7 @@ import { Header } from "../components/Header";
 import { Hero } from "../components/Hero";
 import { CoursesSection } from "../components/CoursesSection";
 import { MySpaceSection } from "../components/MySpaceSection";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 
 const HomePage = () => {
   const { user } = useAuth();

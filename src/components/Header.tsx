@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { Link } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { LoginModal } from "./modals/LoginModal";

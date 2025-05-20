@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Course } from "../../types";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,9 +27,9 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   
-  const { data: courses = [], isLoading, isError, error } = useQuery<Course[], Error>({
+  const { data: courses = [], isLoading, isError, error } = useQuery({
     queryKey: ['instructorCourses', user?.id],
-    queryFn: async () => {
+    queryFn: async (): Promise<Course[]> => {
       if (!user) return [];
       
       const { data, error } = await supabase
@@ -51,12 +51,14 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
         image: course.image,
         category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
         instructor: course.instructor,
+        instructor_id: course.instructor_id,
         instructorId: course.instructor_id,
         students: course.students || 0,
-        status: course.status as 'active' | 'draft',
+        status: course.status as 'active' | 'draft' | 'archived',
         price: course.price || 0,
         isPaid: !!course.isPaid,
         accessCode: course.accessCode,
+        allow_admin_applications: course.allow_admin_applications || false,
         created_at: course.created_at,
         updated_at: course.updated_at
       }));
@@ -68,14 +70,29 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
   
   const handleDeleteCourse = async (courseId: string) => {
     try {
+      // Optimistically remove the course from the UI
+      queryClient.setQueryData<Course[]>(['instructorCourses', user?.id], (oldCourses = []) => 
+        oldCourses.filter(course => course.id !== courseId)
+      );
+      
       const { error } = await supabase
         .from('courses')
         .delete()
         .eq('id', courseId);
       
-      if (error) throw error;
+      if (error) {
+        // Revert optimistic update on error
+        queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] });
+        throw error;
+      }
       
-      queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] });
+      // Invalidate all relevant queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['publicCourses'] }),
+        queryClient.invalidateQueries({ queryKey: ['courses'] }),
+        queryClient.invalidateQueries({ queryKey: ['course', courseId] })
+      ]);
       
       toast({
         title: "Sukses",
@@ -124,6 +141,13 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
         user: user?.id
       });
       
+      // Optimistically update the UI
+      queryClient.setQueryData<Course[]>(['instructorCourses', user?.id], (oldCourses = []) => 
+        oldCourses.map(c => 
+          c.id === course.id ? { ...c, status: newStatus, updated_at: new Date().toISOString() } : c
+        )
+      );
+      
       const { data, error } = await supabase
         .from('courses')
         .update({ 
@@ -136,15 +160,19 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
       
       if (error) {
         console.error('Error updating course status:', error);
+        // Revert optimistic update on error
+        queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] });
         throw error;
       }
       
       console.log('Update response:', data);
       
-      // Invalidate both the instructor's courses and the specific course query
+      // Invalidate all relevant queries
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['instructorCourses', user?.id] }),
-        queryClient.invalidateQueries({ queryKey: ['course', course.id] })
+        queryClient.invalidateQueries({ queryKey: ['course', course.id] }),
+        queryClient.invalidateQueries({ queryKey: ['publicCourses'] }), // Invalidate public courses
+        queryClient.invalidateQueries({ queryKey: ['courses'] }) // Invalidate any other course lists
       ]);
       
       // Show success toast - this will automatically replace the loading toast

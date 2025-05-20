@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { Course } from "../types";
 import { Users, BookOpen, Key } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 

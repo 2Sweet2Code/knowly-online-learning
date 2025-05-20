@@ -11,7 +11,7 @@ import { DashboardSettings } from "../components/dashboard/DashboardSettings";
 import { DashboardUserManagement } from "../components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "../components/dashboard/DashboardContentModeration";
 import { CreateCourseModal } from "../components/modals/CreateCourseModal";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { Navigate, Routes, Route } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import CourseManagementPage from "./CourseManagementPage";

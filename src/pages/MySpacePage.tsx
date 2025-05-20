@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Footer } from "../components/Footer";
 import { Header } from "../components/Header";
 import { MySpaceSection } from "../components/MySpaceSection";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

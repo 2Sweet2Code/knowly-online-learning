@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useCallback } from 'react';
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from '@/hooks/useAuth';
 import { supabase } from "@/integrations/supabase/client";
 import type { PostgrestError } from '@supabase/supabase-js';
 import { CourseContentViewer } from "@/components/course/CourseContentViewer";
