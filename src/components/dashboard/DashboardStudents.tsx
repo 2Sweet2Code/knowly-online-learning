@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -71,7 +71,8 @@ export function DashboardStudents() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const supabase = createClientComponentClient<Database>();
+  // Use the existing Supabase client
+  const supabaseClient = supabase;
   
   // State management
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,7 +92,7 @@ export function DashboardStudents() {
 
       try {
         // 1. Fetch instructor's courses
-        const { data: instructorCourses, error: coursesError } = await supabase
+        const { data: instructorCourses, error: coursesError } = await supabaseClient
           .from('courses')
           .select('id, title')
           .eq('instructor_id', user.id);
@@ -108,7 +109,7 @@ export function DashboardStudents() {
         const courseTitles = new Map(instructorCourses.map(c => [c.id, c.title]));
 
         // 2. Fetch enrollments for these courses
-        const { data: enrollments, error: enrollmentsError } = await supabase
+        const { data: enrollments, error: enrollmentsError } = await supabaseClient
           .from('enrollments')
           .select(`
             id,
@@ -135,7 +136,7 @@ export function DashboardStudents() {
 
         // 3. Fetch grades for these enrollments
         const enrollmentIds = enrollments.map(e => e.id);
-        const { data: grades, error: gradesError } = await supabase
+        const { data: grades, error: gradesError } = await supabaseClient
           .from('student_grades')
           .select('*')
           .in('enrollment_id', enrollmentIds);
@@ -320,22 +321,27 @@ export function DashboardStudents() {
       let error;
       
       // Check if grade exists
-      const { data: existingGrade } = await supabase
+      const { data, error: existingGradeError } = await supabaseClient
         .from('student_grades')
         .select('id')
         .eq('enrollment_id', student.enrollment_id)
         .maybeSingle();
 
-      if (existingGrade?.id) {
+      if (existingGradeError) {
+        console.error('Error fetching existing grade:', existingGradeError);
+        throw existingGradeError;
+      }
+
+      if (data?.id) {
         // Update existing grade
-        const { error: updateError } = await supabase
+        const { error: updateError } = await supabaseClient
           .from('student_grades')
           .update(gradeData)
-          .eq('id', existingGrade.id);
+          .eq('id', data.id);
         error = updateError;
       } else {
         // Insert new grade
-        const { error: insertError } = await supabase
+        const { error: insertError } = await supabaseClient
           .from('student_grades')
           .insert(gradeData);
         error = insertError;
