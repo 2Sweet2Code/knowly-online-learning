@@ -348,7 +348,7 @@ export function DashboardStudents() {
 
     try {
       const gradeData = {
-        user_id: studentId,
+        user_id: student.student_id,  // Use student_id from the interface
         course_id: courseId,
         grade: grade,
         feedback: feedback || null,
@@ -362,7 +362,7 @@ export function DashboardStudents() {
       const { data: existingGrade, error: existingGradeError } = await supabaseClient
         .from('student_grades')
         .select('id')
-        .eq('user_id', studentId)
+        .eq('user_id', student.student_id)  // Use student.student_id
         .eq('course_id', courseId)
         .maybeSingle();
 
