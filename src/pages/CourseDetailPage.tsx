@@ -414,10 +414,31 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
               <div className="flex justify-between items-start">
                 <div>
                   {(isInstructor || isEnrolled) && course?.accessCode && (
-                    <div className="mb-2">
-                      <span className="inline-block bg-brown-light text-brown px-2 py-1 rounded text-sm font-medium">
-                        Access Code: {course.accessCode}
-                      </span>
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <span className="font-medium text-blue-800 mr-2">Access Code:</span>
+                          <span className="font-mono bg-white px-3 py-1.5 rounded border border-blue-300 text-blue-700">
+                            {course.accessCode}
+                          </span>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(course.accessCode || '');
+                            toast({
+                              title: 'Copied!',
+                              description: 'Access code copied to clipboard.',
+                            });
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                          title="Copy code"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Share this code with students who want to join this course.
+                      </p>
                     </div>
                   )}
                   <h1 className="text-2xl font-bold text-gray-900">{cleanTitle}</h1>

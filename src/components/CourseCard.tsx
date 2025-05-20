@@ -40,7 +40,9 @@ export const CourseCard = ({ course }: CourseCardProps) => {
           </span>
         </div>
         
-        <h3 className="text-xl font-playfair font-bold mb-2">{course.title}</h3>
+        <h3 className="text-xl font-playfair font-bold mb-2">
+          {course.title.replace(/\s*\[.*?\]\s*/, '')}
+        </h3>
         <p className="text-sm text-gray-600 flex-grow mb-3">
           {course.description.length > 100 
             ? `${course.description.substring(0, 100)}...` 

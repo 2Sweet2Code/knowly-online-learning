@@ -66,16 +66,11 @@ export const EditCourseModal = ({ isOpen, onClose, course }: EditCourseModalProp
     setIsLoading(true);
     
     try {
-      // Format course title with access code if provided
-      const courseTitle = accessCode 
-        ? `${title.trim()} [${accessCode}]` 
-        : title.trim();
-      
       // Update course in Supabase
       const { data, error } = await supabase
         .from('courses')
         .update({
-          title: courseTitle,
+          title: title.trim(),
           description,
           category,
           image: imageUrl,

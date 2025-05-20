@@ -71,9 +71,8 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       
       const image = imageUrl || `https://placehold.co/600x360/${encodeURIComponent("#5C4B3A")}/${encodeURIComponent("#F5F0E6")}?text=${encodeURIComponent(title)}`;
       
+      // Generate a random access code if none provided
       const courseAccessCode = accessCode || Math.random().toString(36).substring(2, 8).toUpperCase();
-      
-      const courseTitle = `${title} [${courseAccessCode}]`;
       
       let categoryToSave = '';
       if (category === '__addNew__') {
@@ -93,7 +92,7 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       const { data, error } = await supabase
         .from('courses')
         .insert({
-          title: courseTitle,
+          title: title.trim(),
           description,
           category: categoryToSave,
           image,
