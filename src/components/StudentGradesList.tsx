@@ -87,7 +87,9 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         return;
       }
 
-      const studentIds = enrolledStudents.map(e => e.user_id);
+      const studentIds = enrolledStudents
+        .map(e => e.profiles?.id)
+        .filter((id): id is string => !!id); // Ensure we only have valid strings
       
       // Initialize an empty array to store student grades
       let studentsWithGrades: StudentGrade[] = [];
@@ -122,37 +124,41 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         }
         
         // Combine enrollment and grade data
-        studentsWithGrades = (enrolledStudents as Enrollment[]).map((enrollment) => {
-          const gradeInfo = gradesMap.get(enrollment.user_id);
-          return {
-            id: enrollment.user_id,
-            user_id: enrollment.user_id,
-            course_id: courseId,
-            name: enrollment.profiles?.name || 'Unknown',
-            email: enrollment.profiles?.email,
-            role: enrollment.profiles?.role || 'student',
-            grade: gradeInfo?.grade ?? null,
-            feedback: gradeInfo?.feedback ?? null,
-            updated_at: gradeInfo?.updated_at || null,
-            updated_by_name: gradeInfo?.updated_by_name || null
-          };
-        });
+        studentsWithGrades = (enrolledStudents as Enrollment[])
+          .filter(enrollment => enrollment.profiles?.id) // Filter out enrollments without profiles
+          .map((enrollment) => {
+            const gradeInfo = gradesMap.get(enrollment.profiles!.id);
+            return {
+              id: enrollment.profiles!.id,  // Non-null assertion since we filtered nulls
+              user_id: enrollment.profiles!.id,  // Use the profile ID
+              course_id: courseId,
+              name: enrollment.profiles?.name || 'Unknown',
+              email: enrollment.profiles?.email,
+              role: enrollment.profiles?.role || 'student',
+              grade: gradeInfo?.grade ?? null,
+              feedback: gradeInfo?.feedback ?? null,
+              updated_at: gradeInfo?.updated_at || null,
+              updated_by_name: gradeInfo?.updated_by_name || null
+            };
+          });
         
       } catch (gradesError) {
         console.error('Error processing grades:', gradesError);
         // If we can't fetch grades, just return the student list without grades
-        studentsWithGrades = (enrolledStudents as Enrollment[]).map((enrollment) => ({
-          id: enrollment.user_id,
-          user_id: enrollment.user_id,
-          course_id: courseId,
-          name: enrollment.profiles?.name || 'Unknown',
-          email: enrollment.profiles?.email,
-          role: enrollment.profiles?.role || 'student',
-          grade: null,
-          feedback: null,
-          updated_at: null,
-          updated_by_name: null
-        }));
+        studentsWithGrades = (enrolledStudents as Enrollment[])
+          .filter(enrollment => enrollment.profiles?.id) // Filter out enrollments without profiles
+          .map((enrollment) => ({
+            id: enrollment.profiles!.id,  // Non-null assertion since we filtered nulls
+            user_id: enrollment.profiles!.id,  // Use the profile ID
+            course_id: courseId,
+            name: enrollment.profiles?.name || 'Unknown',
+            email: enrollment.profiles?.email,
+            role: enrollment.profiles?.role || 'student',
+            grade: null,
+            feedback: null,
+            updated_at: null,
+            updated_by_name: null
+          }));
       }
 
       setStudents(studentsWithGrades);
