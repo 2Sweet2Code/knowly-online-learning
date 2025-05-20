@@ -48,7 +48,8 @@ export const CourseCard = ({ course }: CourseCardProps) => {
   
   const isInstructor = course.instructor_id === user?.id;
   const showAccessCode = (isEnrolled || isInstructor) && !isLoading;
-  const accessCode = course.accessCode || course.access_code;
+  // Use the correct column name from the database schema (accessCode)
+  const accessCode = course.accessCode;
   
   // Use a local fallback image instead of external placeholder
   const placeholderImage = "/fallback-image.png";
