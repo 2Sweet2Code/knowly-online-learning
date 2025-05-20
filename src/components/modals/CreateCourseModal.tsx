@@ -101,8 +101,8 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
           status: 'draft',
           students: 0,
           price: isPaid ? Number(price) : null,
-          is_paid: isPaid,
-          access_code: courseAccessCode,
+          isPaid: isPaid,
+          accessCode: courseAccessCode,
           allow_admin_applications: allowAdminApplications
         })
         .select()
