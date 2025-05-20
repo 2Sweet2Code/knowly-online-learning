@@ -90,70 +90,195 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoading(false);
       return;
     }
+
+    let timeoutId: NodeJS.Timeout;
+    let isMounted = true;
     
-    // Set a timeout to prevent infinite loading
-    const timeoutId = setTimeout(() => {
-      console.warn('Profile fetch timeout - resetting loading state');
-      setIsLoading(false);
-    }, 10000); // 10 second timeout
+    const controller = new AbortController();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error('Profile fetch timeout'));
+      }, 5000); // 5 second timeout
+    });
     
     try {
-      const { data: userData, error: userError } = await supabase
+      // Define the profile types
+      type Profile = {
+        id: string;
+        name: string | null;
+        email?: string | null;
+        role: string;
+        avatar_url?: string | null;
+        created_at?: string;
+        updated_at?: string;
+        full_name?: string | null;
+      };
+      
+      type ProfileInsert = Omit<Profile, 'id'> & { id: string }; // Ensure id is required for inserts
+
+      // Fetch profile
+      const fetchPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .single<Profile>();
+      
+      // Race between fetch and timeout
+      const result = await Promise.race([
+        fetchPromise.then(({ data, error }) => {
+          if (error) throw error;
+          return { data };
+        }),
+        timeoutPromise
+      ]);
 
       clearTimeout(timeoutId);
+      if (!isMounted) return;
 
-      if (userError) throw userError;
-
-      if (userData) {
+      // If we have data, set the user
+      if (result?.data) {
+        const profile = result.data;
         setUser({
-          id: userData.id,
-          name: userData.name || '',
-          email: userData.email || '',
-          role: userData.role as 'student' | 'instructor' | 'admin',
+          id: profile.id,
+          name: profile.name || '',
+          email: profile.email || '',
+          role: (profile.role as 'student' | 'instructor' | 'admin') || 'student',
           user_metadata: {
-            name: userData.name || '',
-            role: userData.role,
-            avatar_url: userData.avatar_url || undefined,
+            name: profile.name || '',
+            role: profile.role || 'student',
+            avatar_url: profile.avatar_url || undefined,
+          },
+        });
+        return;
+      }
+
+      // If no data, try to create a basic profile
+      console.log('No profile found, creating basic profile');
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert<ProfileInsert>({
+          id: userId,
+          name: '',
+          role: 'student',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+        
+      if (createError) throw createError;
+      
+      if (newProfile) {
+        setUser({
+          id: newProfile.id,
+          name: newProfile.name || '',
+          email: newProfile.email || '',
+          role: (newProfile.role as 'student' | 'instructor' | 'admin') || 'student',
+          user_metadata: {
+            name: newProfile.name || '',
+            role: newProfile.role || 'student',
+            avatar_url: newProfile.avatar_url || undefined,
           },
         });
       }
     } catch (error) {
-      console.error('Error fetching user:', error);
-      toast({
-        title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë ngarkimit të të dhënave të përdoruesit.',
-        variant: 'destructive',
-      });
+      if (isMounted) {
+        console.error('Error in fetchAndSetUser:', error);
+        // Don't show error toast for timeouts or missing profiles
+        if (error.message !== 'Profile fetch timeout' && error.code !== 'PGRST116') {
+          toast({
+            title: 'Gabim',
+            description: 'Ndodhi një gabim gjatë ngarkimit të të dhënave të përdoruesit.',
+            variant: 'destructive',
+          });
+        }
+        // Set a minimal user object to prevent infinite loading
+        setUser({
+          id: userId,
+          name: '',
+          email: '',
+          role: 'student',
+          user_metadata: { name: '', role: 'student' },
+        });
+      }
     } finally {
-      setIsLoading(false);
-    }
-  }, [toast]);
-
-  // Handle auth state changes
-  React.useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      
-      if (session?.user) {
-        await fetchAndSetUser(session.user.id);
-      } else {
-        setUser(null);
+      if (isMounted) {
         setIsLoading(false);
       }
-      
-      if (!authInitialized) {
-        setAuthInitialized(true);
-      }
-    });
+    }
 
     return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [toast]);
+
+  // Initial auth check
+  React.useEffect(() => {
+    let isMounted = true;
+    
+    const checkAuth = async () => {
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        
+        if (isMounted) {
+          setSession(currentSession);
+          
+          if (currentSession?.user) {
+            await fetchAndSetUser(currentSession.user.id);
+          } else {
+            setUser(null);
+            setIsLoading(false);
+          }
+          
+          setAuthInitialized(true);
+        }
+      } catch (error) {
+        console.error('Error during initial auth check:', error);
+        if (isMounted) {
+          setUser(null);
+          setIsLoading(false);
+          setAuthInitialized(true);
+        }
+      }
+    };
+    
+    // Set a timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      if (isMounted && !authInitialized) {
+        console.warn('Auth initialization timeout - forcing state update');
+        setUser(null);
+        setIsLoading(false);
+        setAuthInitialized(true);
+      }
+    }, 5000); // 5 second timeout
+    
+    checkAuth();
+    
+    // Handle auth state changes after initial check
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (isMounted) {
+          setSession(session);
+          
+          if (session?.user) {
+            await fetchAndSetUser(session.user.id);
+          } else {
+            setUser(null);
+            setIsLoading(false);
+          }
+        }
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
       authListener?.subscription.unsubscribe();
     };
-  }, [authInitialized, fetchAndSetUser]);
+  }, [fetchAndSetUser, authInitialized]);
 
   // Login function
   const login = React.useCallback(async (email: string, password: string) => {
