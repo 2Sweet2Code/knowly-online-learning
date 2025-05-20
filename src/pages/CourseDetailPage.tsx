@@ -157,27 +157,37 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!courseId) return null;
       
       try {
-        const { data, error } = await supabase
+        // First, get the basic course data
+        const { data: courseData, error: courseError } = await supabase
           .from('courses')
-          .select('*, enrollments!inner(*)')
+          .select('*')
           .eq('id', courseId)
           .single();
           
-        if (error) throw error;
+        if (courseError) throw courseError;
         
-        const dbCourse = data as unknown as DBCourse;
+        const dbCourse = courseData as unknown as DBCourse;
         
-        // Check if user is enrolled
-        const isUserEnrolled = dbCourse.enrollments?.some(
-          (enrollment) => enrollment.user_id === user?.id
-        );
-        
-        // Check if user is instructor
-        const isUserInstructor = dbCourse.instructor_id === user?.id;
-        
-        // Update enrollment status
-        setIsEnrolled(!!isUserEnrolled || !!isUserInstructor);
-        setIsInstructor(!!isUserInstructor);
+        // Then check if user is enrolled in a separate query
+        if (user) {
+          const { data: enrollmentData, error: enrollmentError } = await supabase
+            .from('enrollments')
+            .select('*')
+            .eq('course_id', courseId)
+            .eq('user_id', user.id)
+            .maybeSingle();
+            
+          if (enrollmentError) {
+            console.error('Error checking enrollment:', enrollmentError);
+          }
+          
+          // Check if user is instructor
+          const isUserInstructor = dbCourse.instructor_id === user.id;
+          
+          // Update enrollment status
+          setIsEnrolled(!!enrollmentData || isUserInstructor);
+          setIsInstructor(isUserInstructor);
+        }
         
         // Convert to Course type
         const course: Course = {
