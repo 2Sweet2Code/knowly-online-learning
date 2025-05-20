@@ -157,10 +157,10 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!courseId) return null;
       
       try {
-        // First, get the basic course data without any joins
+        // First, get the basic course data with access code
         const { data: courseData, error: courseError } = await supabase
           .from('courses')
-          .select('*')
+          .select('*, instructor:profiles(full_name)')
           .eq('id', courseId)
           .single();
           
@@ -488,14 +488,31 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <div className="flex justify-between items-start">
                 <div>
-                  {(isInstructor || isEnrolled) && course?.accessCode && (
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-between">
+                  {(isInstructor || isEnrolled || isAdmin) && course?.accessCode && (
+                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="flex items-center">
-                          <span className="font-medium text-blue-800 mr-2">Access Code:</span>
-                          <span className="font-mono bg-white px-3 py-1.5 rounded border border-blue-300 text-blue-700">
-                            {course.accessCode}
-                          </span>
+                          <span className="font-medium text-blue-800 mr-2">Course Access Code:</span>
+                          <div className="relative">
+                            <span className="font-mono bg-white px-3 py-1.5 rounded border border-blue-300 text-blue-700 text-sm sm:text-base">
+                              {course.accessCode}
+                            </span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(course.accessCode || '');
+                                toast({
+                                  title: 'Copied!',
+                                  description: 'Access code copied to clipboard.',
+                                });
+                              }}
+                              className="ml-2 p-1 text-blue-600 hover:text-blue-800"
+                              title="Copy to clipboard"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         <button 
                           onClick={() => {
