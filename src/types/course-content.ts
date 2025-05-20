@@ -3,7 +3,7 @@ export interface CourseContent {
   course_id: string;
   title: string;
   description: string;
-  content_type: 'file' | 'link' | 'text' | 'assignment';
+  content_type: 'file' | 'link' | 'text' | 'assignment' | 'video';
   content_url?: string;
   file_path?: string;
   file_name?: string;
@@ -11,6 +11,7 @@ export interface CourseContent {
   file_type?: string;
   position: number;
   is_published: boolean;
+  is_preview?: boolean;
   created_at: string;
   updated_at: string;
   created_by: string;
@@ -31,7 +32,7 @@ export interface CreateCourseContentPayload {
   course_id: string;
   title: string;
   description: string;
-  content_type: 'file' | 'link' | 'text' | 'assignment';
+  content_type: 'file' | 'link' | 'text' | 'assignment' | 'video';
   content_url?: string;
   file_path?: string;
   file_name?: string;

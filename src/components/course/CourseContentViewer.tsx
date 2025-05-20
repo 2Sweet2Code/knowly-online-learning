@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Link as LinkIcon, File, Video, BookOpen, Download, Loader2 } from 'lucide-react';
+import { FileText, Link as LinkIcon, File, Video, BookOpen, Download, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
-import type { CourseContent } from '@/types/database.types';
+import { useAuth } from '@/hooks/useAuth';
+import type { CourseContent } from '@/types/course-content';
 
 const CONTENT_ICONS = {
   file: <File className="h-5 w-5" />,
@@ -17,23 +18,75 @@ const CONTENT_ICONS = {
 
 export function CourseContentViewer() {
   const { courseId } = useParams<{ courseId: string }>();
+  const { user } = useAuth();
   const [content, setContent] = useState<CourseContent[]>([]);
   const [selectedContent, setSelectedContent] = useState<CourseContent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [isCheckingEnrollment, setIsCheckingEnrollment] = useState(true);
+  
+  // Check if user is enrolled in the course
+  useEffect(() => {
+    const checkEnrollment = async () => {
+      if (!courseId || !user?.id) {
+        setIsEnrolled(false);
+        setIsCheckingEnrollment(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('enrollments')
+          .select('id')
+          .eq('course_id', courseId)
+          .eq('user_id', user.id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+          throw error;
+        }
+
+
+        setIsEnrolled(!!data);
+      } catch (error) {
+        console.error('Error checking enrollment:', error);
+        toast({
+          title: 'Gabim',
+          description: 'Ndodhi një gabim gjatë verifikimit të regjistrimit në kurs.',
+          variant: 'destructive',
+        });
+        setIsEnrolled(false);
+      } finally {
+        setIsCheckingEnrollment(false);
+      }
+    };
+
+    checkEnrollment();
+  }, [courseId, user?.id]);
   
   // Fetch course content
   useEffect(() => {
-    if (!courseId) return;
+    if (!courseId || !user?.id || isCheckingEnrollment) return;
 
     const fetchContent = async () => {
       setIsLoading(true);
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from('course_content')
           .select('*')
-          .eq('course_id', courseId)
-          .eq('is_published', true)
-          .order('position', { ascending: true });
+          .eq('course_id', courseId);
+
+        // Only show published content if user is not an instructor
+        if (user.role !== 'instructor' && user.role !== 'admin') {
+          query = query.eq('is_published', true);
+        }
+
+        // If user is not enrolled, only show preview content
+        if (!isEnrolled) {
+          query = query.eq('is_preview', true);
+        }
+
+        const { data, error } = await query.order('position', { ascending: true });
 
         if (error) throw error;
         
@@ -57,7 +110,7 @@ export function CourseContentViewer() {
     };
 
     fetchContent();
-  }, [courseId]);
+  }, [courseId, isEnrolled, isCheckingEnrollment, user?.id, user?.role]);
   
   const renderContent = () => {
     if (!selectedContent) return null;
@@ -196,11 +249,50 @@ export function CourseContentViewer() {
     }
   };
   
-  if (isLoading) {
+  if (isLoading || isCheckingEnrollment) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <Loader2 className="h-8 w-8 animate-spin text-gray-500 mb-2" />
         <p className="text-gray-600">Duke ngarkuar përmbajtjen...</p>
+      </div>
+    );
+  }
+
+  // Show enrollment message if user is not enrolled
+  if (!isEnrolled) {
+    return (
+      <div className="text-center py-12 px-4">
+        <AlertCircle className="mx-auto h-12 w-12 text-yellow-500 mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Nuk jeni të regjistruar në këtë kurs</h3>
+        <p className="text-gray-600 mb-6">Ju duhet të regjistroheni në këtë kurs për të parë përmbajtjen e plotë.</p>
+        {content.length > 0 && (
+          <div className="max-w-2xl mx-auto mt-8">
+            <h4 className="text-md font-medium text-gray-900 mb-4">Parashtrim i kursit:</h4>
+            <div className="space-y-2">
+              {content.map((item) => (
+                <div key={item.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <span className="text-blue-500">
+                      {CONTENT_ICONS[item.content_type as keyof typeof CONTENT_ICONS] || <FileText className="h-5 w-5" />}
+                    </span>
+                    <span className="font-medium">{item.title}</span>
+                    {item.is_preview && (
+                      <span className="ml-auto bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                        Shikim i lirë
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <p className="text-blue-800">Regjistrohuni tani për të pasur qasje në të gjithë përmbajtjen e kursit!</p>
+              <Button className="mt-3" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                Regjistrohu në Kurs
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -26,15 +26,24 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToSignup }: LoginModalProp
       onClose();
       
       // Then redirect based on user role
-      if (user) {
-        const redirectPath = user.role === 'admin' ? '/dashboard' : 
-                           user.role === 'instructor' ? '/dashboard' : 
-                           '/my-space';
-        navigate(redirectPath);
-      } else {
-        // Fallback redirect if user object is not available
-        navigate('/');
-      }
+      const redirectAndReload = () => {
+        if (user) {
+          const redirectPath = user.role === 'admin' ? '/dashboard' : 
+                             user.role === 'instructor' ? '/dashboard' : 
+                             '/my-space';
+          navigate(redirectPath, { replace: true });
+        } else {
+          // Fallback redirect if user object is not available
+          navigate('/', { replace: true });
+        }
+        
+        // Force reload the page after a short delay to ensure navigation completes
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
+      };
+      
+      redirectAndReload();
     }
   }, [isAuthenticated, isOpen, onClose, navigate, user]);
 
