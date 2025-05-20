@@ -55,14 +55,21 @@ const createUserProfile = async (userId: string, name: string, role: string): Pr
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = React.useState<User | null>(null);
+  // State management
   const [session, setSession] = React.useState<Session | null>(null);
+  const [user, setUser] = React.useState<User | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [authInitialized, setAuthInitialized] = React.useState<boolean>(false);
   const { toast } = useToast();
 
-  // Helper function to format error messages
+  // Helper function to get error message
   const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) return error.message;
+    return String(error);
+  };
+
+  // Helper function to format error messages
+  const formatErrorMessage = (error: unknown): string => {
     if (error instanceof AuthError) {
       switch (error.message) {
         case 'Invalid login credentials':
@@ -83,7 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Function to fetch and set user data
+  // Function to fetch and set user data with retry mechanism
   const fetchAndSetUser = React.useCallback(async (userId: string | undefined) => {
     if (!userId) {
       setUser(null);
@@ -91,109 +98,136 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: NodeJS.Timeout | null = null;
     let isMounted = true;
+    let retryCount = 0;
+    const maxRetries = 2;
     
-    const controller = new AbortController();
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        controller.abort();
-        reject(new Error('Profile fetch timeout'));
-      }, 5000); // 5 second timeout
-    });
-    
-    try {
-      // Define the profile types
-      type Profile = {
-        id: string;
-        name: string | null;
-        email?: string | null;
-        role: string;
-        avatar_url?: string | null;
-        created_at?: string;
-        updated_at?: string;
-        full_name?: string | null;
-      };
+    const attemptFetch = async (): Promise<void> => {
+      const controller = new AbortController();
       
-      type ProfileInsert = Omit<Profile, 'id'> & { id: string }; // Ensure id is required for inserts
-
-      // Fetch profile
-      const fetchPromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single<Profile>();
-      
-      // Race between fetch and timeout
-      const result = await Promise.race([
-        fetchPromise.then(({ data, error }) => {
-          if (error) throw error;
-          return { data };
-        }),
-        timeoutPromise
-      ]);
-
-      clearTimeout(timeoutId);
-      if (!isMounted) return;
-
-      // If we have data, set the user
-      if (result?.data) {
-        const profile = result.data;
-        setUser({
-          id: profile.id,
-          name: profile.name || '',
-          email: profile.email || '',
-          role: (profile.role as 'student' | 'instructor' | 'admin') || 'student',
-          user_metadata: {
-            name: profile.name || '',
-            role: profile.role || 'student',
-            avatar_url: profile.avatar_url || undefined,
-          },
-        });
-        return;
-      }
-
-      // If no data, try to create a basic profile
-      console.log('No profile found, creating basic profile');
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert<ProfileInsert>({
-          id: userId,
-          name: '',
-          role: 'student',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      try {
+        // Define the profile types
+        type Profile = {
+          id: string;
+          name: string | null;
+          email?: string | null;
+          role: string;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          full_name?: string | null;
+        };
         
-      if (createError) throw createError;
-      
-      if (newProfile) {
-        setUser({
-          id: newProfile.id,
-          name: newProfile.name || '',
-          email: newProfile.email || '',
-          role: (newProfile.role as 'student' | 'instructor' | 'admin') || 'student',
-          user_metadata: {
-            name: newProfile.name || '',
-            role: newProfile.role || 'student',
-            avatar_url: newProfile.avatar_url || undefined,
-          },
+        type ProfileInsert = Omit<Profile, 'id'> & { id: string };
+
+        // Create a timeout promise
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Profile fetch timeout'));
+          }, 5000); // 5 second timeout per attempt
         });
-      }
-    } catch (error) {
-      if (isMounted) {
-        console.error('Error in fetchAndSetUser:', error);
-        // Don't show error toast for timeouts or missing profiles
-        if (error.message !== 'Profile fetch timeout' && error.code !== 'PGRST116') {
-          toast({
-            title: 'Gabim',
-            description: 'Ndodhi një gabim gjatë ngarkimit të të dhënave të përdoruesit.',
-            variant: 'destructive',
+
+        // Try to fetch the profile
+        const fetchPromise = supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single<Profile>();
+
+        const { data: userData, error: fetchError } = await Promise.race([
+          fetchPromise,
+          timeoutPromise
+        ]);
+
+        if (!isMounted) return;
+
+        if (fetchError) {
+          if (fetchError.code === 'PGRST116') {
+            // No profile found, create a basic one
+            console.log('No profile found, creating basic profile');
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert<ProfileInsert>({
+                id: userId,
+                name: '',
+                role: 'student',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .select()
+              .single();
+              
+            if (createError) throw createError;
+            
+            if (newProfile && isMounted) {
+              setUser({
+                id: newProfile.id,
+                name: newProfile.name || '',
+                email: newProfile.email || '',
+                role: (newProfile.role as 'student' | 'instructor' | 'admin') || 'student',
+                user_metadata: {
+                  name: newProfile.name || '',
+                  role: newProfile.role || 'student',
+                  avatar_url: newProfile.avatar_url || undefined,
+                },
+              });
+            }
+          } else {
+            throw fetchError;
+          }
+        } else if (userData) {
+          // We have user data, update the state
+          if (isMounted) {
+            setUser({
+              id: userData.id,
+              name: userData.name || '',
+              email: userData.email || '',
+              role: (userData.role as 'student' | 'instructor' | 'admin') || 'student',
+              user_metadata: {
+                name: userData.name || '',
+                role: userData.role || 'student',
+                avatar_url: userData.avatar_url || undefined,
+              },
+            });
+          }
+        }
+      } catch (error: unknown) {
+        if (!isMounted) return;
+        
+        if (retryCount < maxRetries) {
+          // Exponential backoff for retries
+          const delay = 1000 * Math.pow(2, retryCount);
+          retryCount++;
+          console.log(`Retrying profile fetch (${retryCount}/${maxRetries}) in ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return attemptFetch();
+        }
+        
+        // If we've exhausted retries, set a minimal user object
+        console.warn('Max retries reached for profile fetch, using minimal user data', error);
+        if (isMounted) {
+          setUser({
+            id: userId,
+            name: '',
+            email: '',
+            role: 'student',
+            user_metadata: { name: '', role: 'student' },
           });
         }
-        // Set a minimal user object to prevent infinite loading
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    };
+    
+    try {
+      // Start the fetch attempt
+      await attemptFetch();
+    } catch (error: unknown) {
+      console.error('Error in fetchAndSetUser:', getErrorMessage(error));
+      // Set minimal user data on error
+      if (isMounted) {
         setUser({
           id: userId,
           name: '',
@@ -210,37 +244,57 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isMounted = false;
-      clearTimeout(timeoutId);
-      controller.abort();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [toast]);
 
-  // Initial auth check
+  // Initial auth check with retry mechanism
   React.useEffect(() => {
     let isMounted = true;
+    let retryCount = 0;
+    const maxRetries = 2;
     
     const checkAuth = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) throw error;
         
         if (isMounted) {
           setSession(currentSession);
           
           if (currentSession?.user) {
-            await fetchAndSetUser(currentSession.user.id);
+            try {
+              await fetchAndSetUser(currentSession.user.id);
+            } catch (userError) {
+              console.error('Error fetching user data:', userError);
+              // Continue even if user fetch fails
+            }
           } else {
             setUser(null);
-            setIsLoading(false);
           }
           
           setAuthInitialized(true);
+          setIsLoading(false);
         }
       } catch (error) {
         console.error('Error during initial auth check:', error);
+        
+        if (retryCount < maxRetries) {
+          // Retry with exponential backoff
+          const delay = 1000 * Math.pow(2, retryCount);
+          retryCount++;
+          console.log(`Retrying auth check (${retryCount}/${maxRetries}) in ${delay}ms`);
+          setTimeout(checkAuth, delay);
+          return;
+        }
+        
+        // If we've exhausted retries, continue with unauthenticated state
         if (isMounted) {
+          console.warn('Max retries reached, continuing without authentication');
           setUser(null);
-          setIsLoading(false);
           setAuthInitialized(true);
+          setIsLoading(false);
         }
       }
     };
@@ -250,25 +304,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (isMounted && !authInitialized) {
         console.warn('Auth initialization timeout - forcing state update');
         setUser(null);
-        setIsLoading(false);
         setAuthInitialized(true);
+        setIsLoading(false);
       }
-    }, 5000); // 5 second timeout
+    }, 8000); // 8 second timeout
     
     checkAuth();
     
     // Handle auth state changes after initial check
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (isMounted) {
-          setSession(session);
-          
-          if (session?.user) {
+        if (!isMounted) return;
+        
+        console.log('Auth state changed:', event);
+        setSession(session);
+        
+        if (session?.user) {
+          try {
             await fetchAndSetUser(session.user.id);
-          } else {
-            setUser(null);
-            setIsLoading(false);
+          } catch (error) {
+            console.error('Error in auth state change handler:', error);
           }
+        } else {
+          setUser(null);
+          setIsLoading(false);
         }
       }
     );
