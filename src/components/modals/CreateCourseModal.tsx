@@ -112,20 +112,33 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       
       // Enroll the instructor in their own course
       if (data && data.id) {
-        await supabase
-          .from('enrollments')
-          .insert({
-            user_id: user.id,
-            course_id: data.id,
-            status: 'enrolled',
-            enrolled_at: new Date().toISOString()
-          });
-        
-        // Update the student count
-        await supabase
-          .from('courses')
-          .update({ students: 1 })
-          .eq('id', data.id);
+        try {
+          const { error: enrollmentError } = await supabase
+            .from('enrollments')
+            .insert({
+              user_id: user.id,
+              course_id: data.id,
+              status: 'enrolled',
+              role: 'instructor',
+              enrolled_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          
+          if (enrollmentError) {
+            console.error('Error enrolling instructor:', enrollmentError);
+            // Don't throw, we'll still consider this a success
+          } else {
+            // Update the student count only if enrollment was successful
+            await supabase
+              .from('courses')
+              .update({ students: 1 })
+              .eq('id', data.id);
+          }
+        } catch (enrollError) {
+          console.error('Failed to enroll instructor:', enrollError);
+          // Continue even if enrollment fails
+        }
       }
       
       queryClient.invalidateQueries({ queryKey: ['courses'] });

@@ -165,7 +165,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
 
   // Memoize the mapping function to prevent unnecessary re-renders
   const mapDbCourseToCourse = useCallback((dbCourse: DBCourseRow): Course => {
-    return {
+    const course: Course = {
       id: dbCourse.id,
       title: dbCourse.title,
       description: dbCourse.description,
@@ -173,15 +173,17 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       category: dbCourse.category as 'programim' | 'dizajn' | 'marketing' | 'other',
       instructor: dbCourse.instructor,
       instructorId: dbCourse.instructor_id,
-      students: dbCourse.students,
-      status: dbCourse.status as 'draft' | 'active' | 'archived',
-      price: dbCourse.price,
-      isPaid: dbCourse.is_paid || false,
-      created_at: dbCourse.created_at,
-      updated_at: dbCourse.updated_at,
-      accessCode: dbCourse.access_code,
-      allow_admin_applications: dbCourse.allow_admin_applications
+      students: dbCourse.students || 0,
+      status: (dbCourse.status as 'draft' | 'active' | 'archived') || 'draft',
+      price: dbCourse.price || 0,
+      isPaid: !!dbCourse.is_paid,
+      created_at: dbCourse.created_at || new Date().toISOString(),
+      updated_at: dbCourse.updated_at || new Date().toISOString(),
+      accessCode: dbCourse.access_code || undefined,
+      allow_admin_applications: !!dbCourse.allow_admin_applications
     };
+    console.log('Mapped course:', course); // Debug log
+    return course;
   }, []); // Empty dependency array since this function doesn't depend on any external values
 
   // Fetch course data
@@ -209,9 +211,12 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
           status: (courseData.status as 'active' | 'draft') || 'draft',
           price: courseData.price || 0,
           isPaid: !!courseData.is_paid,
+          accessCode: courseData.access_code, // Make sure access code is included
           created_at: courseData.created_at || new Date().toISOString(),
           updated_at: courseData.updated_at || new Date().toISOString(),
         };
+        
+        console.log('Course data loaded:', course); // Debug log
         
         // Get instructor name if not already set
         if (courseData.instructor_id && !course.instructor_name) {
