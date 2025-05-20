@@ -1,13 +1,21 @@
 import * as React from 'react';
-import { User } from '../types';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 import type { Database } from "@/integrations/supabase/types";
 import { AuthContext } from './auth-context';
 
+// Define User type based on profiles table schema
+type User = {
+  id: string;
+  name: string;
+  role: 'student' | 'instructor' | 'admin';
+  created_at: string;
+  updated_at: string;
+};
+
 // Function to create or update user profile in profiles table
-const createUserProfile = async (userId: string, name: string, role: string): Promise<Database['public']['Tables']['profiles']['Row'] | null> => {
+const createUserProfile = async (userId: string, name: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
     const { data: existingProfile, error: fetchError } = await supabase
       .from('profiles')
@@ -19,10 +27,11 @@ const createUserProfile = async (userId: string, name: string, role: string): Pr
       throw fetchError;
     }
 
-    const profileData = {
+    const profileData: User = {
       id: userId,
       name,
       role,
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
@@ -78,12 +87,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setState(prev => ({ ...prev, authInitialized }));
     
   const { user, session, isLoading, authInitialized } = state;
-  // State management
-  const [session, setSession] = React.useState<Session | null>(null);
-  const [user, setUser] = React.useState<User | null>(null);
-  const [isLoading, setIsLoading] = React.useState<boolean>(true);
-  const [authInitialized, setAuthInitialized] = React.useState<boolean>(false);
-  const { toast } = useToast();
 
   // Helper function to get error message
   const getErrorMessage = (error: unknown): string => {
@@ -154,12 +157,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (isMounted) {
           setUser({
             id: profile.id,
-            email: profile.email || '',
             name: profile.name || '',
-            role: profile.role || 'student',
-            avatar_url: profile.avatar_url || '',
-            created_at: profile.created_at || new Date().toISOString(),
-            updated_at: profile.updated_at || new Date().toISOString(),
+            role: profile.role as 'student' | 'instructor' | 'admin',
+            created_at: profile.created_at,
+            updated_at: profile.updated_at
           });
           setIsLoading(false);
           console.log('[Auth] User data set successfully');
@@ -195,12 +196,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isMounted = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-    const maxRetries = 2;
     
-    const attemptFetch = async (): Promise<void> => {
-      const controller = new AbortController();
-      
-      try {
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
         // Define the profile types
         type Profile = {
           id: string;
@@ -342,54 +343,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  // Initial auth check with retry mechanism
-  React.useEffect(() => {
-    let isMounted = true;
-    let retryCount = 0;
-    const maxRetries = 2;
-    let retryTimeout: NodeJS.Timeout | null = null;
-    let globalTimeout: NodeJS.Timeout | null = null;
-    
-    const checkAuth = async () => {
-      if (!isMounted) return;
-      
-      console.log('[Auth] Starting auth check...');
-      
-      try {
         // Use a simple promise race with a timeout
         const { data: { session: currentSession }, error } = await Promise.race([
           supabase.auth.getSession(),
-          new Promise<{ data: { session: Session | null }, error: null }>((_, reject) => 
-            setTimeout(() => reject(new Error('Auth check timeout')), 5000) // 5s timeout for initial check
-          )
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Auth check timeout')), 5000);
+          })
         ]);
-        
-        if (error) {
-          console.error('[Auth] Error getting session:', error);
-          throw error;
-        }
-        
-        if (!isMounted) return;
-        
-        console.log('[Auth] Session state:', currentSession ? 'authenticated' : 'not authenticated');
-        setSession(currentSession);
-        
+
+        if (error) throw error;
+
         if (currentSession?.user) {
-          console.log('[Auth] User session found, fetching user data...');
-          try {
-            await fetchAndSetUser(currentSession.user.id);
-            console.log('[Auth] User data fetched successfully');
-          } catch (userError) {
-            console.error('[Auth] Error fetching user data:', userError);
-            // Continue even if user fetch fails
-          }
+          await fetchAndSetUser(currentSession.user.id);
         } else {
-          console.log('[Auth] No user session found');
           setUser(null);
+          setSession(null);
         }
-        
+
         if (isMounted) {
-          console.log('[Auth] Auth initialization complete');
           setAuthInitialized(true);
           setIsLoading(false);
         }
@@ -423,11 +394,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
     
+    // Initial check with timeout
+    const checkAuth = async () => {
+      try {
+        await attemptFetch();
+      } catch (error) {
+        console.error('[Auth] Auth check error:', error);
+        if (isMounted) {
+          setUser(null);
+          setAuthInitialized(true);
+          setIsLoading(false);
+        }
+      }
+    };
+
     // Initial check
     checkAuth();
-    
-    // Set a global timeout to prevent infinite loading (30s)
-    globalTimeout = setTimeout(() => {
+
+    // Global timeout to prevent infinite loading
+    const globalTimeout = setTimeout(() => {
       if (isMounted && !authInitialized) {
         console.warn('Auth initialization timeout - forcing state update');
         setUser(null);
@@ -435,8 +420,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoading(false);
       }
     }, 8000); // 8 second timeout
-    
-    checkAuth();
     
     // Handle auth state changes after initial check
     const { data: authListener } = supabase.auth.onAuthStateChange(
