@@ -8,6 +8,12 @@ import type {
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
 
+// Track if the toast system is initialized
+let isInitialized = false
+
+// Track if there are pending toasts that need to be shown after initialization
+const pendingToasts: Array<() => void> = []
+
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
@@ -131,10 +137,28 @@ const listeners: Array<(state: State) => void> = []
 let memoryState: State = { toasts: [] }
 
 function dispatch(action: Action) {
+  // If not initialized, queue the action for later
+  if (!isInitialized) {
+    pendingToasts.push(() => dispatch(action))
+    return
+  }
+  
   memoryState = reducer(memoryState, action)
   listeners.forEach((listener) => {
     listener(memoryState)
   })
+}
+
+// Function to initialize the toast system
+function initializeToastSystem() {
+  if (isInitialized) return
+  isInitialized = true
+  
+  // Process any pending toasts
+  while (pendingToasts.length > 0) {
+    const pendingToast = pendingToasts.shift()
+    if (pendingToast) pendingToast()
+  }
 }
 
 type Toast = Omit<ToasterToast, "id">
@@ -172,6 +196,9 @@ function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
   React.useEffect(() => {
+    // Initialize the toast system when the first toast hook is used
+    initializeToastSystem()
+    
     listeners.push(setState)
     return () => {
       const index = listeners.indexOf(setState)
@@ -179,7 +206,7 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, [])
 
   return {
     ...state,

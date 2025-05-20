@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError, User as SupabaseUser } from '@supabase/supabase-js';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { AuthContext, type AuthContextType } from './auth-context';
 
 // Import User type from the shared types
@@ -91,7 +91,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
   
   const { user, session, isLoading, authInitialized } = state;
-  const { toast } = useToast();
   
   // State updaters
   const setUser = React.useCallback((user: User | null) => {
@@ -435,7 +434,7 @@ setUser({
     } finally {
       setIsLoading(false);
     }
-  }, [getErrorMessage, setIsLoading, setUser, toast]);
+  }, [getErrorMessage, setIsLoading, setUser]);
 
   // Logout function
   const signOut = React.useCallback(async () => {
@@ -459,7 +458,7 @@ setUser({
     } finally {
       setIsLoading(false);
     }
-  }, [setUser, setSession, setIsLoading, getErrorMessage, toast]);
+  }, [setUser, setSession, setIsLoading, getErrorMessage]);
 
   // Alias for backward compatibility
   const login = React.useCallback(signIn, [signIn]);

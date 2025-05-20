@@ -164,23 +164,23 @@ const App = () => {
   }, []);
 
   return (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <PayPalScriptProvider 
-        options={{ 
-          clientId: "test",
-          currency: "EUR",
-          intent: "capture",
-          components: paypalReady ? 'buttons' : '',
-          dataSdkIntegrationSource: 'integrationbuilder_sc'
-        }}
-        deferLoading={true}
-      >
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <PayPalScriptProvider 
+          options={{ 
+            clientId: "test",
+            currency: "EUR",
+            intent: "capture",
+            components: paypalReady ? 'buttons' : '',
+            dataSdkIntegrationSource: 'integrationbuilder_sc'
+          }}
+          deferLoading={true}
+        >
+          <AuthProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/courses" element={<CoursesPage />} />
@@ -210,9 +210,9 @@ const App = () => {
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
-        </AuthProvider>
+                </BrowserRouter>
+              </TooltipProvider>
+            </AuthProvider>
       </PayPalScriptProvider>
       {process.env.NODE_ENV === 'development' && (
         <Suspense fallback={null}>
