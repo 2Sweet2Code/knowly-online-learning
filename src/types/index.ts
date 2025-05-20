@@ -20,6 +20,7 @@ export interface Course {
   instructor: string;
   instructorId: string;
   instructor_id?: string; // For database compatibility
+  instructor_name?: string; // For displaying instructor's full name
   instructorAvatar?: string;
   students: number;
   status: 'draft' | 'active' | 'archived';

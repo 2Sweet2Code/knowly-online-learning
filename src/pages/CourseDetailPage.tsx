@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode, useCallback } from 'react';
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
@@ -145,31 +145,86 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
   // Define the database course type
-  interface DBCourse extends Omit<Course, 'instructorId'> {
+  interface DBCourseRow {
+    id: string;
+    title: string;
+    description: string;
+    image: string;
+    category: string;
+    instructor: string;
     instructor_id: string;
-    enrollments?: Enrollment[];
+    students: number;
+    status: string;
+    price: number;
+    is_paid?: boolean;
+    created_at: string;
+    updated_at: string;
+    access_code?: string;
+    allow_admin_applications?: boolean;
   }
+
+  // Memoize the mapping function to prevent unnecessary re-renders
+  const mapDbCourseToCourse = useCallback((dbCourse: DBCourseRow): Course => {
+    return {
+      id: dbCourse.id,
+      title: dbCourse.title,
+      description: dbCourse.description,
+      image: dbCourse.image,
+      category: dbCourse.category as 'programim' | 'dizajn' | 'marketing' | 'other',
+      instructor: dbCourse.instructor,
+      instructorId: dbCourse.instructor_id,
+      students: dbCourse.students,
+      status: dbCourse.status as 'draft' | 'active' | 'archived',
+      price: dbCourse.price,
+      isPaid: dbCourse.is_paid || false,
+      created_at: dbCourse.created_at,
+      updated_at: dbCourse.updated_at,
+      accessCode: dbCourse.access_code,
+      allow_admin_applications: dbCourse.allow_admin_applications
+    };
+  }, []); // Empty dependency array since this function doesn't depend on any external values
 
   // Fetch course data
   const { data: courseData, isLoading: isLoadingCourse } = useQuery<Course>({
     queryKey: ['course', courseId],
     queryFn: async () => {
-      if (!courseId) return null;
+      if (!courseId) throw new Error('Course ID is required');
       
       try {
-        // First, get the basic course data with access code
+        // First, get the basic course data
         const { data: courseData, error: courseError } = await supabase
           .from('courses')
-          .select('*, instructor:profiles(full_name)')
+          .select('*')
           .eq('id', courseId)
-          .single();
+          .single<DBCourseRow>();
           
         if (courseError) throw courseError;
-        if (!courseData) {
-          throw new Error('Course not found');
-        }
+        if (!courseData) throw new Error('Course not found');
         
-        const dbCourse = courseData as unknown as DBCourse;
+        // Map database course to our Course type and add instructor name if available
+        const course: Course = {
+          ...mapDbCourseToCourse(courseData),
+          // Ensure these fields exist to prevent undefined errors
+          students: courseData.students || 0,
+          status: (courseData.status as 'active' | 'draft') || 'draft',
+          price: courseData.price || 0,
+          isPaid: !!courseData.is_paid,
+          created_at: courseData.created_at || new Date().toISOString(),
+          updated_at: courseData.updated_at || new Date().toISOString(),
+        };
+        
+        // Get instructor name if not already set
+        if (courseData.instructor_id && !course.instructor_name) {
+          const { data: instructorData, error: instructorError } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', courseData.instructor_id)
+            .single();
+            
+          if (!instructorError && instructorData?.full_name) {
+            course.instructor_name = instructorData.full_name;
+          }
+        }
         
         // Check if user is enrolled and get user role in a separate query
         if (user) {
@@ -189,7 +244,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
               setIsAdmin(enrollmentData.role === 'admin');
             } else {
               // Check if user is the course instructor
-              const isUserInstructor = dbCourse.instructor_id === user.id;
+              const isUserInstructor = course.instructorId === user.id;
               setIsEnrolled(isUserInstructor);
               setIsInstructor(isUserInstructor);
               
@@ -208,19 +263,6 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
             console.error('Error checking user role:', err);
           }
         }
-        
-        // Convert to Course type
-        const course: Course = {
-          ...dbCourse,
-          instructorId: dbCourse.instructor_id,
-          // Ensure these fields exist to prevent undefined errors
-          students: dbCourse.students || 0,
-          status: (dbCourse.status as 'active' | 'draft') || 'draft',
-          price: dbCourse.price || 0,
-          isPaid: !!dbCourse.isPaid,
-          created_at: dbCourse.created_at || new Date().toISOString(),
-          updated_at: dbCourse.updated_at || new Date().toISOString(),
-        };
         
         return course;
       } catch (error) {
@@ -247,20 +289,29 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!user?.id || !courseId) return;
 
       try {
-        // Get course data first
+        // Get the course data from the database
         const { data: courseData, error: courseError } = await supabase
           .from('courses')
           .select('*')
           .eq('id', courseId)
-          .single();
+          .single<DBCourseRow>();
 
         if (courseError) {
-          console.error('Error fetching course data:', courseError);
           throw courseError;
         }
-
+        
+        if (!courseData) {
+          throw new Error('Course not found');
+        }
+        
+        // Map the database course to our Course type
+        const mappedCourse = mapDbCourseToCourse(courseData);
+        
+        // Update the course state with the mapped data
+        setCourse(mappedCourse);
+        
         // Check if user is the instructor
-        const isUserInstructor = courseData.instructor_id === user.id;
+        const isUserInstructor = mappedCourse.instructorId === user.id;
         
         // Check if user is enrolled in a separate query
         const { data: enrollmentData, error: enrollmentError } = await supabase
@@ -285,8 +336,10 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       }
     };
 
-    checkEnrollment();
-  }, [user, courseId]);
+    if (user?.id && courseId) {
+      checkEnrollment();
+    }
+  }, [user, courseId, mapDbCourseToCourse]);
 
   const handleEnrollClick = () => {
     if (!user?.id) {
