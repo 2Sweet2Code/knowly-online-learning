@@ -97,11 +97,12 @@ export function DashboardStudents() {
           .select(`
             id,
             title,
-            enrollments (
+            instructor_id,
+            enrollments!enrollments_course_id_fkey (
               id,
               user_id,
               created_at,
-              profiles (
+              profiles!enrollments_user_id_fkey (
                 id,
                 name,
                 email,
@@ -152,13 +153,17 @@ export function DashboardStudents() {
             
             const profile = Array.isArray(enrollment.profiles) ? enrollment.profiles[0] : enrollment.profiles;
             
-            // Get grade if it exists
+            // Skip if this is the instructor
+            if (profile.id === course.instructor_id) continue;
+            
+            // Get grade if it exists - using user_id and course_id as per the schema
             let gradeInfo: StudentGrade | null = null;
-            if (enrollment.id) {
+            if (enrollment.user_id && courseId) {
               const { data: gradeData } = await supabaseClient
                 .from('student_grades')
                 .select('*')
-                .eq('enrollment_id', enrollment.id)
+                .eq('user_id', enrollment.user_id)
+                .eq('course_id', courseId)
                 .maybeSingle();
               
               if (gradeData) gradeInfo = gradeData;
@@ -278,56 +283,69 @@ export function DashboardStudents() {
     ));
   };
 
-  const handleGradeChange = (studentId: string, value: string) => {
+  const handleGradeChange = (studentId: string, courseId: string, value: string) => {
+    const key = `${studentId}-${courseId}`;
     setGradeInputs(prev => ({
       ...prev,
-      [studentId]: value
+      [key]: value
     }));
   };
 
-  const handleFeedbackChange = (studentId: string, value: string) => {
+  const handleFeedbackChange = (studentId: string, courseId: string, value: string) => {
+    const key = `${studentId}-${courseId}`;
     setFeedbackInputs(prev => ({
       ...prev,
-      [studentId]: value
+      [key]: value
     }));
   };
 
-  const toggleEditGrade = (studentId: string) => {
+  const toggleEditGrade = (studentId: string, courseId: string) => {
+    const key = `${studentId}-${courseId}`;
     setEditingGrades(prev => ({
       ...prev,
-      [studentId]: !prev[studentId]
+      [key]: !prev[key]
     }));
   };
 
-  const handleSaveGrade = async (student: InstructorStudentData) => {
-    if (!user?.id) return;
-    
-    const studentId = student.student_id;
-    const gradeStr = gradeInputs[studentId] ?? student.grade?.toString() ?? '';
-    const grade = gradeStr ? parseFloat(gradeStr) : null;
-    const feedback = feedbackInputs[studentId] ?? student.feedback ?? '';
+  const handleSaveGrade = async (studentId: string, courseId: string, enrollmentId: string) => {
+    const student = studentData.find(s => s.student_id === studentId && s.course_id === courseId);
+    if (!student || !user?.id) return;
 
-    setSavingGrades(prev => ({ ...prev, [studentId]: true }));
+    const grade = parseFloat(gradeInputs[`${studentId}-${courseId}`] || '0');
+    const feedback = feedbackInputs[`${studentId}-${courseId}`] || '';
+
+    if (isNaN(grade) || grade < 0 || grade > 100) {
+      toast({
+        title: 'Gabim',
+        description: 'Ju lutem vendosni një notë midis 0 dhe 100',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingGrades(prev => ({
+      ...prev,
+      [studentId]: true
+    }));
 
     try {
       const gradeData = {
         user_id: studentId,
-        course_id: student.course_id,
-        enrollment_id: student.enrollment_id,
+        course_id: courseId,
         grade: grade,
         feedback: feedback || null,
         updated_by: user.id,
         updated_at: new Date().toISOString(),
-        updated_by_name: user.user_metadata?.full_name || 'Instructor'
       };
 
       let error;
       
-      // Check if grade exists
-      const { data, error: existingGradeError } = await supabaseClient
+      // Check if grade exists - using user_id and course_id as per the schema
+      const { data: existingGrade, error: existingGradeError } = await supabaseClient
         .from('student_grades')
         .select('id')
-        .eq('enrollment_id', student.enrollment_id)
+        .eq('user_id', studentId)
+        .eq('course_id', courseId)
         .maybeSingle();
 
       if (existingGradeError) {
@@ -335,12 +353,13 @@ export function DashboardStudents() {
         throw existingGradeError;
       }
 
-      if (data?.id) {
+      if (existingGrade?.id) {
         // Update existing grade
         const { error: updateError } = await supabaseClient
           .from('student_grades')
           .update(gradeData)
-          .eq('id', data.id);
+          .eq('user_id', studentId)
+          .eq('course_id', courseId);
         error = updateError;
       } else {
         // Insert new grade
@@ -354,13 +373,13 @@ export function DashboardStudents() {
 
       // Update UI
       const updatedStudents = studentData.map(s => {
-        if (s.enrollment_id === student.enrollment_id) {
+        if (s.student_id === studentId && s.course_id === courseId) {
           return {
             ...s,
             grade,
             feedback: feedback || null,
             updated_at: gradeData.updated_at,
-            updated_by_name: gradeData.updated_by_name
+            updated_by_name: user.user_metadata?.full_name || 'Instructor'
           };
         }
         return s;
@@ -375,6 +394,18 @@ export function DashboardStudents() {
         [studentId]: false
       }));
 
+      // Clear the inputs
+      setGradeInputs(prev => {
+        const newInputs = { ...prev };
+        delete newInputs[`${studentId}-${courseId}`];
+        return newInputs;
+      });
+      setFeedbackInputs(prev => {
+        const newInputs = { ...prev };
+        delete newInputs[`${studentId}-${courseId}`];
+        return newInputs;
+      });
+
       toast({
         title: 'Sukses',
         description: 'Nota u ruajt me sukses.',
@@ -384,7 +415,7 @@ export function DashboardStudents() {
       console.error('Error saving grade:', error);
       toast({
         title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë ruajtjes së notës.',
+        description: 'Ndodhi një gabim gjatë ruajtjes së notës: ' + (error instanceof Error ? error.message : 'Unknown error'),
         variant: 'destructive',
       });
     } finally {
@@ -540,30 +571,30 @@ export function DashboardStudents() {
                           </div>
                         </td>
                         <td className="p-4 align-middle">
-                          {editingGrades[student.student_id] ? (
+                          {editingGrades[`${student.student_id}-${student.course_id}`] ? (
                             <Input
                               type="number"
                               min="0"
                               max="10"
                               step="0.1"
                               className="w-20"
-                              value={gradeInputs[student.student_id] ?? student.grade ?? ''}
-                              onChange={(e) => handleGradeChange(student.student_id, e.target.value)}
+                              value={gradeInputs[`${student.student_id}-${student.course_id}`] ?? student.grade ?? ''}
+                              onChange={(e) => handleGradeChange(student.student_id, student.course_id, e.target.value)}
                               disabled={savingGrades[student.student_id]}
                             />
                           ) : (
                             <span className={`font-medium ${student.grade !== null ? 'text-primary' : 'text-muted-foreground'}`}>
-                              {student.grade !== null ? student.grade.toFixed(1) : 'Pa notë'}
+                              {student.grade !== null ? Number(student.grade).toFixed(1) : 'Pa notë'}
                             </span>
                           )}
                         </td>
                         <td className="p-4 align-middle">
-                          {editingGrades[student.student_id] ? (
+                          {editingGrades[`${student.student_id}-${student.course_id}`] ? (
                             <Input
                               type="text"
                               placeholder="Shto koment..."
-                              value={feedbackInputs[student.student_id] ?? student.feedback ?? ''}
-                              onChange={(e) => handleFeedbackChange(student.student_id, e.target.value)}
+                              value={feedbackInputs[`${student.student_id}-${student.course_id}`] ?? student.feedback ?? ''}
+                              onChange={(e) => handleFeedbackChange(student.student_id, student.course_id, e.target.value)}
                               disabled={savingGrades[student.student_id]}
                             />
                           ) : (
@@ -574,19 +605,19 @@ export function DashboardStudents() {
                         </td>
                         <td className="p-4 align-middle text-right">
                           <div className="flex justify-end space-x-2">
-                            {editingGrades[student.student_id] ? (
+                            {editingGrades[`${student.student_id}-${student.course_id}`] ? (
                               <>
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => toggleEditGrade(student.student_id)}
+                                  onClick={() => toggleEditGrade(student.student_id, student.course_id)}
                                   disabled={savingGrades[student.student_id]}
                                 >
                                   Anulo
                                 </Button>
                                 <Button
                                   size="sm"
-                                  onClick={() => handleSaveGrade(student)}
+                                  onClick={() => handleSaveGrade(student.student_id, student.course_id, student.enrollment_id)}
                                   disabled={savingGrades[student.student_id]}
                                 >
                                   {savingGrades[student.student_id] ? (
@@ -602,7 +633,7 @@ export function DashboardStudents() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => toggleEditGrade(student.student_id)}
+                                  onClick={() => toggleEditGrade(student.student_id, student.course_id)}
                                 >
                                   <Edit className="h-4 w-4 mr-2" />
                                   Ndrysho
