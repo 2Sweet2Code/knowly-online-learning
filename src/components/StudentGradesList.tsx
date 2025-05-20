@@ -5,8 +5,37 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save } from "lucide-react";
 
+type Profiles = {
+  name: string | null;
+};
+
+type StudentGradeRow = {
+  user_id: string;
+  grade: number | null;
+  feedback: string | null;
+  updated_at: string | null;
+  updated_by: Profiles | null;
+};
+
 interface StudentGradesListProps {
   courseId: string;
+}
+
+interface GradeData {
+  grade: number | null;
+  feedback: string | null;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}
+
+interface Enrollment {
+  user_id: string;
+  profiles: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    role: string | null;
+  };
 }
 
 interface StudentGrade {
@@ -19,8 +48,8 @@ interface StudentGrade {
   email?: string | null;
   role: string;
   updated_by?: string;
-  updated_at?: string;
-  updated_by_name?: string;
+  updated_at?: string | null;
+  updated_by_name?: string | null;
 }
 
 export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
@@ -33,6 +62,8 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
   const queryClient = useQueryClient();
 
   const fetchStudentsWithGrades = useCallback(async () => {
+    if (!user) return;
+    
     setLoading(true);
     setError(null);
     
@@ -40,72 +71,105 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       // Get all enrolled students
       const { data: enrolledStudents, error: enrollmentError } = await supabase
         .from('enrollments')
-        .select('user_id')
+        .select(`
+          user_id,
+          profiles:user_id (id, name, email, role)
+        `)
         .eq('course_id', courseId);
       
-      if (enrollmentError) throw enrollmentError;
+      if (enrollmentError) {
+        console.error('Error fetching enrollments:', enrollmentError);
+        throw new Error('Gabim gjatë ngarkimit të listës së studentëve.');
+      }
+      
       if (!enrolledStudents?.length) {
         setStudents([]);
         return;
       }
 
-      // Get user profiles (only students, exclude instructors and admins)
-      const userIds = enrolledStudents.map(e => e.user_id);
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, email, role')
-        .in('id', userIds)
-        .not('role', 'in', '("instructor","admin")');
+      const studentIds = enrolledStudents.map(e => e.user_id);
       
-      if (profilesError) throw profilesError;
-      if (!profiles?.length) {
-        setStudents([]);
-        return;
-      }
-
-      // Get existing grades with instructor info
-      const { data: grades = [], error: gradesError } = await supabase
-        .from('student_grades')
-        .select(`
-          *,
-          updated_by_user:profiles!student_grades_updated_by_fkey (id, name, email)
-        `)
-        .eq('course_id', courseId)
-        .in('user_id', userIds);
-
-      if (gradesError && !['42P01', 'PGRST116'].includes(gradesError.code)) {
-        console.error('Error fetching grades:', gradesError);
-        throw gradesError;
-      }
-
-      // Combine data
-      const studentsWithGrades = profiles.map(profile => {
-        const grade = grades?.find(g => g.user_id === profile.id);
-        const updatedBy = grade?.updated_by_user?.name || 'Sistemi';
+      // Initialize an empty array to store student grades
+      let studentsWithGrades: StudentGrade[] = [];
+      
+      try {
+        // Try to fetch grades if the table exists
+        const { data: gradesData, error: gradesError } = await supabase
+          .from('student_grades')
+          .select('*')
+          .eq('course_id', courseId)
+          .in('user_id', studentIds) as { 
+            data: StudentGradeRow[] | null, 
+            error: { message: string; code?: string } | null 
+          };
         
-        return {
-          id: grade?.id || `temp-${profile.id}`,
+        if (gradesError && gradesError.code !== '42P01') { // Ignore 'relation does not exist' error
+          console.error('Error fetching grades:', gradesError);
+          throw new Error('Gabim gjatë ngarkimit të notave.');
+        }
+        
+        // Create a map of user_id to grade data for faster lookups
+        const gradesMap = new Map<string, GradeData>();
+        if (gradesData) {
+          gradesData.forEach((grade) => {
+            gradesMap.set(grade.user_id, {
+              grade: grade.grade,
+              feedback: grade.feedback,
+              updated_at: grade.updated_at,
+              updated_by_name: grade.updated_by?.name || null
+            });
+          });
+        }
+        
+        // Combine enrollment and grade data
+        studentsWithGrades = (enrolledStudents as Enrollment[]).map((enrollment) => {
+          const gradeInfo = gradesMap.get(enrollment.user_id);
+          return {
+            id: enrollment.user_id,
+            user_id: enrollment.user_id,
+            course_id: courseId,
+            name: enrollment.profiles?.name || 'Unknown',
+            email: enrollment.profiles?.email,
+            role: enrollment.profiles?.role || 'student',
+            grade: gradeInfo?.grade ?? null,
+            feedback: gradeInfo?.feedback ?? null,
+            updated_at: gradeInfo?.updated_at || null,
+            updated_by_name: gradeInfo?.updated_by_name || null
+          };
+        });
+        
+      } catch (gradesError) {
+        console.error('Error processing grades:', gradesError);
+        // If we can't fetch grades, just return the student list without grades
+        studentsWithGrades = (enrolledStudents as Enrollment[]).map((enrollment) => ({
+          id: enrollment.user_id,
+          user_id: enrollment.user_id,
           course_id: courseId,
-          user_id: profile.id,
-          grade: grade?.grade ?? null,
-          feedback: grade?.feedback ?? null,
-          updated_by: grade?.updated_by,
-          updated_at: grade?.updated_at,
-          name: profile.name || 'Student pa emër',
-          email: profile.email,
-          role: profile.role || 'student',
-          updated_by_name: updatedBy
-        };
-      });
+          name: enrollment.profiles?.name || 'Unknown',
+          email: enrollment.profiles?.email,
+          role: enrollment.profiles?.role || 'student',
+          grade: null,
+          feedback: null,
+          updated_at: null,
+          updated_by_name: null
+        }));
+      }
 
       setStudents(studentsWithGrades);
     } catch (error) {
-      console.error('Error fetching student grades:', error);
-      setError('Gabim gjatë ngarkimit të të dhënave');
+      console.error('Error in fetchStudentsWithGrades:', error);
+      setError(error instanceof Error ? error.message : 'Gabim gjatë ngarkimit të të dhënave');
+      
+      // Show error toast
+      toast({
+        title: 'Gabim',
+        description: error instanceof Error ? error.message : 'Ndodhi një gabim gjatë ngarkimit të të dhënave',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
-  }, [courseId]);
+  }, [courseId, toast, user]);
 
   useEffect(() => {
     fetchStudentsWithGrades();
@@ -123,18 +187,20 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       // First check if a grade already exists
       const { data: existingGrade, error: fetchError } = await supabase
         .from('student_grades')
-        .select('id')
+        .select('id, updated_by, updated_at')
         .eq('user_id', userId)
         .eq('course_id', courseId)
         .maybeSingle();
       
-      if (fetchError && fetchError.code !== 'PGRST116') { // Ignore "not found" error
+      // If we get a 406 error, it means the table exists but we don't have permission
+      // or there's a schema mismatch. We'll try to upsert anyway.
+      if (fetchError && fetchError.code !== 'PGRST116' && fetchError.code !== '406') {
         throw fetchError;
       }
       
       // Prepare the data to upsert
       const gradeData = {
-        id: existingGrade?.id, // Use existing ID if it exists
+        id: existingGrade?.id || undefined, // Let the database generate a new ID if needed
         user_id: userId,
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
@@ -145,24 +211,34 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
       console.log('Upserting grade data:', gradeData);
       
-      let error;
+      // Use upsert to handle both insert and update in one operation
+      const { error: upsertError } = await supabase
+        .from('student_grades')
+        .upsert(gradeData, {
+          onConflict: 'user_id,course_id',
+          ignoreDuplicates: false
+        });
       
-      if (existingGrade?.id) {
-        // Update existing grade
-        const { error: updateError } = await supabase
-          .from('student_grades')
-          .update(gradeData)
-          .eq('id', existingGrade.id);
-        error = updateError;
-      } else {
-        // Insert new grade
-        const { error: insertError } = await supabase
-          .from('student_grades')
-          .insert(gradeData);
-        error = insertError;
+      if (upsertError) {
+        // If we get a 409 error, it might be due to a unique constraint violation
+        // Let's try to update the existing record
+        if (upsertError.code === '23505' || upsertError.code === '23514') {
+          const { error: updateError } = await supabase
+            .from('student_grades')
+            .update({
+              grade: grade !== null ? Number(grade) : null,
+              feedback: feedback || null,
+              updated_by: user.id,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', userId)
+            .eq('course_id', courseId);
+            
+          if (updateError) throw updateError;
+        } else {
+          throw upsertError;
+        }
       }
-      
-      if (error) throw error;
       
       console.log('Grade saved successfully');
       
@@ -177,9 +253,31 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
     } catch (error) {
       console.error('Error saving grade:', error);
+      let errorMessage = 'Ndodhi një gabim gjatë ruajtjes së notës.';
+      
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          code: error['code'],
+          details: error['details'],
+          hint: error['hint']
+        });
+        
+        // Provide more specific error messages based on the error code
+        if (error['code'] === '23503') {
+          errorMessage = 'Gabim: ID e përdoruesit ose e kursit nuk ekziston.';
+        } else if (error['code'] === '23514') {
+          errorMessage = 'Gabim: Vlera e notës duhet të jetë midis 0 dhe 100.';
+        } else if (error['code'] === '42501') {
+          errorMessage = 'Gabim: Nuk keni leje për të kryer këtë veprim.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         title: 'Gabim',
-        description: error instanceof Error ? error.message : 'Ndodhi një gabim gjatë ruajtjes së notës.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
