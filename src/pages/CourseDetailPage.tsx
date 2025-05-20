@@ -550,7 +550,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <div className="flex justify-between items-start">
                 <div>
-                  {course?.accessCode && (
+                  {course?.accessCode && (isEnrolled || isInstructor) && (
                     <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="flex items-center">
