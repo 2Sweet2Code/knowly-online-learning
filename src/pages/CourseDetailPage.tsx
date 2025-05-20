@@ -26,6 +26,17 @@ interface CourseAdmin {
   updated_at?: string;
 }
 
+interface Enrollment {
+  id: string;
+  user_id: string;
+  course_id: string;
+  role: string;
+  progress: number;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
@@ -133,6 +144,12 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   // Clean up the title (remove any existing code in brackets)
   const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
+  // Define the database course type
+  interface DBCourse extends Omit<Course, 'instructorId'> {
+    instructor_id: string;
+    enrollments?: Enrollment[];
+  }
+
   // Fetch course data
   const { data: courseData, isLoading: isLoadingCourse } = useQuery<Course>({
     queryKey: ['course', courseId],
@@ -142,20 +159,42 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       try {
         const { data, error } = await supabase
           .from('courses')
-          .select('*')
+          .select('*, enrollments!inner(*)')
           .eq('id', courseId)
           .single();
           
         if (error) throw error;
-        return data as Course;
+        
+        const dbCourse = data as unknown as DBCourse;
+        
+        // Check if user is enrolled
+        const isUserEnrolled = dbCourse.enrollments?.some(
+          (enrollment) => enrollment.user_id === user?.id
+        );
+        
+        // Check if user is instructor
+        const isUserInstructor = dbCourse.instructor_id === user?.id;
+        
+        // Update enrollment status
+        setIsEnrolled(!!isUserEnrolled || !!isUserInstructor);
+        setIsInstructor(!!isUserInstructor);
+        
+        // Convert to Course type
+        const course: Course = {
+          ...dbCourse,
+          instructorId: dbCourse.instructor_id,
+        };
+        
+        return course;
       } catch (error) {
         console.error('Error fetching course:', error);
         setError('Failed to load course data');
         return null;
       }
     },
-    enabled: !!courseId,
+    enabled: !!courseId && !!user?.id,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnWindowFocus: false
   });
 
   // Update course state
@@ -171,39 +210,33 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!user?.id || !courseId) return;
 
       try {
-        // Check if user is the instructor of this course
-        const { data: courseData, error: courseError } = await supabase
+        // Get course data with enrollments
+        const { data, error } = await supabase
           .from('courses')
-          .select('instructor_id, allow_admin_applications')
+          .select('*, enrollments!inner(*)')
           .eq('id', courseId)
           .single();
 
-        if (courseError) {
-          console.error('Error fetching course data:', courseError);
-          throw courseError;
-        }
-
-        // If user is the instructor, set as enrolled and instructor
-        if (courseData?.instructor_id === user.id) {
-          setIsEnrolled(true);
-          setIsInstructor(true);
-          return;
-        }
-
-        // Check if user is enrolled
-        const { data, error } = await supabase
-          .from('enrollments')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('course_id', courseId)
-          .maybeSingle();
-
         if (error) {
-          console.error('Error checking enrollment:', error);
+          console.error('Error fetching course data:', error);
           throw error;
         }
 
-        setIsEnrolled(!!data);
+
+        const dbCourse = data as unknown as DBCourse;
+        
+        // Check if user is the instructor
+        const isUserInstructor = dbCourse.instructor_id === user.id;
+        
+        // Check if user is enrolled
+        const isUserEnrolled = dbCourse.enrollments?.some(
+          (enrollment) => enrollment.user_id === user.id
+        ) || false;
+
+        // Update state
+        setIsInstructor(isUserInstructor);
+        setIsEnrolled(isUserEnrolled || isUserInstructor);
+        
       } catch (error) {
         console.error('Error checking enrollment:', error);
         setError('Failed to check course enrollment status');
