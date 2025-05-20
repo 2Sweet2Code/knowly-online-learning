@@ -1,16 +1,27 @@
 import { supabase } from '@/integrations/supabase/client';
 
+/**
+ * Fetches all courses from the database
+ * @returns {Promise<Array>} Array of courses or empty array if error occurs
+ */
 export async function checkCourses() {
   try {
     console.log('Checking courses in the database...');
     
+    if (!supabase) {
+      console.warn('Supabase client is not initialized');
+      return [];
+    }
+    
     // First, check if we can connect to Supabase
     const { data: session, error: sessionError } = await supabase.auth.getSession();
-    console.log('Session:', session);
     
     if (sessionError) {
       console.error('Error getting session:', sessionError);
+      return [];
     }
+    
+    console.log('Session:', session);
     
     // Query all courses
     const { data: courses, error } = await supabase
@@ -23,8 +34,7 @@ export async function checkCourses() {
       return [];
     }
     
-    console.log(`Found ${courses?.length || 0} courses in the database:`);
-    console.log(courses);
+    console.log(`Found ${courses?.length || 0} courses in the database`);
     
     return courses || [];
   } catch (error) {
@@ -33,5 +43,4 @@ export async function checkCourses() {
   }
 }
 
-// Run the check when this module is imported
-checkCourses().catch(console.error);
+// Export the function without immediately executing it

@@ -31,7 +31,7 @@ import { DashboardAnalytics } from "./components/dashboard/DashboardAnalytics";
 import { DashboardSettings } from "./components/dashboard/DashboardSettings";
 
 // Import debug utility
-import './utils/checkCourses';
+import { checkCourses } from './utils/checkCourses';
 import { DashboardUserManagement } from "./components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { SubmitAssignmentPage } from "./pages/assignments/SubmitAssignmentPage";
@@ -114,6 +114,20 @@ const App = () => {
   
   // Create a state to track if PayPal is ready
   const [paypalReady, setPaypalReady] = useState(false);
+
+  // Load courses on component mount
+  useEffect(() => {
+    const loadCourses = async () => {
+      try {
+        const courses = await checkCourses();
+        console.log('Courses loaded:', courses);
+      } catch (error) {
+        console.error('Error loading courses:', error);
+      }
+    };
+
+    loadCourses();
+  }, []);
 
   // Load PayPal script with retry mechanism
   useEffect(() => {
