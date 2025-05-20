@@ -141,9 +141,13 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
         }
       }
       
-      queryClient.invalidateQueries({ queryKey: ['courses'] });
-      queryClient.invalidateQueries({ queryKey: ['instructorCourses', user.id] });
-      queryClient.invalidateQueries({ queryKey: ['distinctCourseCategories'] });
+      // Invalidate all relevant queries to refresh the UI
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['courses'] }),
+        queryClient.invalidateQueries({ queryKey: ['instructorCourses', user.id] }),
+        queryClient.invalidateQueries({ queryKey: ['distinctCourseCategories'] }),
+        queryClient.invalidateQueries({ queryKey: ['publicCourses'] }), // Add this to refresh the courses page
+      ]);
       
       toast({
         title: "Sukses!",
@@ -153,6 +157,17 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
       if (onSuccess) {
         onSuccess();
       }
+      
+      // Reset form
+      setTitle('');
+      setDescription('');
+      setCategory('');
+      setNewCategoryName('');
+      setImageUrl('');
+      setAccessCode('');
+      setIsPaid(false);
+      setPrice('');
+      setAllowAdminApplications(true);
       
       onClose();
     } catch (error) {

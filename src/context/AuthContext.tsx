@@ -1,29 +1,10 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { useState, useEffect, ReactNode, useCallback } from 'react';
 import { User } from '../types';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 import type { Database } from "@/integrations/supabase/types";
-
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin') => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | null>(null);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+import { AuthContext } from './auth-context';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -289,7 +270,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         subscription.unsubscribe();
       }
     };
-  }, [fetchAndSetUser]); // Add fetchAndSetUser as a dependency
+  }, [fetchAndSetUser, createUserProfile]); // Add fetchAndSetUser and createUserProfile as dependencies
 
   // Login function with improved error handling
   const login = async (email: string, password: string) => {
@@ -368,7 +349,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: "Jeni çkyçur me sukses.",
       });
       
-      // Auth state change handler will handle the rest
+      // Redirect to home page after successful logout
+      window.location.href = '/';
     } catch (error: unknown) {
       console.error('Logout failed:', error);
       toast({

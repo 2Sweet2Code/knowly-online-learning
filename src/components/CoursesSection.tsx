@@ -44,18 +44,16 @@ const fetchCourses = async (category: string) => {
         category: course.category as 'programim' | 'dizajn' | 'marketing' | 'other',
         instructor: course.instructor,
         instructor_id: course.instructor_id,
-        instructorId: course.instructor_id, // For backward compatibility
+        instructorId: course.instructor_id,
         students: course.students || 0,
         status: course.status as 'active' | 'draft',
         price: course.price || 0,
-        is_paid: !!course.is_paid,
-        isPaid: !!course.is_paid, // For backward compatibility
-        access_code: course.access_code,
-        accessCode: course.access_code, // For backward compatibility
+        isPaid: course.isPaid || false,
         created_at: course.created_at,
         updated_at: course.updated_at,
-        allow_admin_applications: course.allow_admin_applications
-      };
+        accessCode: course.accessCode || '',
+        allow_admin_applications: course.allow_admin_applications || false
+      } as Course; // Type assertion to ensure type safety
     });
     
     console.log('Formatted courses:', formattedCourses);
