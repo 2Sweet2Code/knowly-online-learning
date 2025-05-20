@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Edit, Search, User, Save, Loader2, RefreshCw, Users, BookOpen } from 'lucide-react';
+import { AlertCircle, Edit, Search, User as UserIcon, Save, Loader2, RefreshCw, Users, BookOpen } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Database } from '@/types/database.types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,7 +47,7 @@ type Course = {
   title: string;
 };
 
-type Profile = {
+interface Profile {
   id: string;
   name: string | null;
   email: string | null;
@@ -662,7 +662,7 @@ export function DashboardStudents() {
                                   onClick={() => handleViewProfile(student.student_id)}
                                   title="Shiko profilin"
                                 >
-                                  <User className="h-4 w-4" />
+                                  <UserIcon className="h-4 w-4" />
                                 </Button>
                               </>
                             )}

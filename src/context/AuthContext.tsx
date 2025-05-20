@@ -1,18 +1,10 @@
-import { useState, useEffect, ReactNode, useCallback, useContext } from 'react';
+import { useState, useEffect, ReactNode, useCallback } from 'react';
 import { User } from '../types';
 import { supabase } from "@/integrations/supabase/client";
 import { Session, AuthError } from '@supabase/supabase-js';
 import { useToast } from '@/hooks/use-toast';
 import type { Database } from "@/integrations/supabase/types";
 import { AuthContext } from './auth-context';
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === null) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -136,7 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       clearTimeout(timeoutId); // Clear the timeout
       setIsLoading(false); 
     }
-  }, [toast]);
+  }, [toast, createUserProfile]);
 
   // Function to create a user profile
   const createUserProfile = useCallback(async (userId: string): Promise<Database['public']['Tables']['profiles']['Row'] | null> => {

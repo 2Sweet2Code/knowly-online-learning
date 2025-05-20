@@ -12,4 +12,6 @@ interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export { AuthContext, type AuthContextType };
