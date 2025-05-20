@@ -86,7 +86,9 @@ export const CourseContentManager: React.FC<CourseContentManagerProps> = ({
       if (data.contentType === 'file' && data.file) {
         // Upload file first
         const { path } = await courseContentService.uploadFile(data.file, courseId);
-        const fileUrl = `https://${process.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/public/course-files/${path}`;
+        // Get the base URL from the Supabase client configuration
+        const baseUrl = 'https://oemwaoaebmwdfrndohmh.supabase.co';
+        const fileUrl = `${baseUrl}/storage/v1/object/public/course-files/${path}`;
         
         // Create content with file
         await courseContentService.createContent({
