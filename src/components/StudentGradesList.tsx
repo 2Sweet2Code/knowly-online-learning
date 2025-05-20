@@ -203,7 +203,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
 
       // Prepare the data to save using the profile ID
       const gradeData = {
-        user_id: student.id,  // Use the profile ID as user_id
+        user_id: student.user_id,  // Use the user_id from the student object
         course_id: courseId,
         grade: grade !== null ? Number(grade) : null,
         feedback: feedback || null,
@@ -213,15 +213,35 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
       console.log('Upserting grade data:', gradeData);
       
-      // Use upsert to handle both insert and update in a single operation
-      const { error: upsertError } = await supabase
+      // First check if the grade exists
+      const { data: existingGrade, error: fetchError } = await supabase
         .from('student_grades')
-        .upsert(gradeData, {
-          onConflict: 'user_id,course_id',
-          ignoreDuplicates: false
-        });
+        .select('id')
+        .eq('user_id', student.user_id)
+        .eq('course_id', courseId)
+        .maybeSingle();
       
-      if (upsertError) throw upsertError;
+      if (fetchError) throw fetchError;
+      
+      let error;
+      
+      if (existingGrade?.id) {
+        // Update existing grade
+        const { error: updateError } = await supabase
+          .from('student_grades')
+          .update(gradeData)
+          .eq('user_id', student.user_id)
+          .eq('course_id', courseId);
+        error = updateError;
+      } else {
+        // Insert new grade
+        const { error: insertError } = await supabase
+          .from('student_grades')
+          .insert(gradeData);
+        error = insertError;
+      }
+      
+      if (error) throw error;
       
       console.log('Grade saved successfully');
       
