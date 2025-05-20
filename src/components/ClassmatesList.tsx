@@ -189,33 +189,68 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
   }, [courseId]);
 
   const handleLeaveClass = async () => {
-    if (!user) return;
+    if (!user?.id || !courseId) {
+      console.error('User or course ID is missing');
+      return;
+    }
     
     // Confirm before leaving
     const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs?');
     if (!confirmLeave) return;
     
     setIsLeavingClass(true);
+    console.log('Attempting to leave course:', { userId: user.id, courseId });
     
     try {
-      // First, get the enrollment ID
+      // First, verify the enrollment exists and belongs to the user
       const { data: enrollment, error: findError } = await supabase
         .from('enrollments')
-        .select('id')
+        .select('id, user_id, course_id')
         .eq('user_id', user.id)
         .eq('course_id', courseId)
         .single();
-        
-      if (findError) throw findError;
-      if (!enrollment) throw new Error('Enrollment not found');
       
-      // Remove the enrollment using the ID
-      const { error: deleteError } = await supabase
+      if (findError) {
+        console.error('Error finding enrollment:', findError);
+        throw new Error('Gabim gjatë gjetjes së regjistrimit tuaj në këtë kurs.');
+      }
+      
+      if (!enrollment) {
+        console.error('No enrollment found for user:', user.id, 'in course:', courseId);
+        throw new Error('Nuk u gjet regjistrimi juaj në këtë kurs.');
+      }
+      
+      console.log('Found enrollment to delete:', enrollment);
+      
+      // Remove the enrollment
+      const { error: deleteError, status, statusText } = await supabase
         .from('enrollments')
         .delete()
         .eq('id', enrollment.id);
       
-      if (deleteError) throw deleteError;
+      console.log('Delete result:', { status, statusText, deleteError });
+      
+      if (deleteError) {
+        console.error('Error deleting enrollment:', deleteError);
+        
+        // If it's an RLS violation, show a more specific error
+        if (deleteError.code === '42501') {
+          throw new Error('Nuk keni leje për të lënë këtë kurs. Ju lutemi kontaktoni administratorin.');
+        }
+        
+        // For other errors, try one more time with a direct SQL query
+        console.log('Trying direct SQL query...');
+        const { error: sqlError } = await supabase
+          .from('enrollments')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('course_id', courseId);
+          
+        if (sqlError) {
+          console.error('Direct SQL delete error:', sqlError);
+          throw new Error('Nuk u larguat dot nga kursi. Ju lutemi provoni përsëri ose kontaktoni administratorin.');
+        }
+      }
       
       // Update local state
       setClassmates(prev => prev.filter(c => c.id !== user.id));
@@ -251,16 +286,30 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         // Not critical if this fails
       }
       
-      // Invalidate queries to refresh the UI
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
-        queryClient.invalidateQueries({ queryKey: ['course', courseId] })
-      ]);
+      // Invalidate all relevant queries
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
+          queryClient.invalidateQueries({ queryKey: ['course', courseId] }),
+          queryClient.invalidateQueries({ queryKey: ['courses'] }),
+          queryClient.invalidateQueries({ queryKey: ['user-enrollments', user.id] })
+        ]);
+        console.log('Successfully invalidated queries');
+      } catch (invalidateError) {
+        console.error('Error invalidating queries:', invalidateError);
+        // Continue even if invalidation fails
+      }
+      
+      // Show success message
+      toast({
+        title: 'Sukses',
+        description: 'Jeni larguar me sukses nga ky kurs.',
+        variant: 'default',
+      });
       
       // Redirect to courses page after a short delay
-      setTimeout(() => {
-        navigate('/courses');
-      }, 1500);
+      console.log('Redirecting to /courses');
+      navigate('/courses');
       
     } catch (error) {
       console.error('Error leaving class:', error);
