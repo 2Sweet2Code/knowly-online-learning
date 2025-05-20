@@ -213,35 +213,26 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       
       console.log('Upserting grade data:', gradeData);
       
-      // First check if the grade exists
-      const { data: existingGrade, error: fetchError } = await supabase
+      // First try to update the existing record
+      const { error: updateError } = await supabase
         .from('student_grades')
-        .select('id')
+        .update(gradeData)
         .eq('user_id', student.user_id)
-        .eq('course_id', courseId)
-        .maybeSingle();
+        .eq('course_id', courseId);
       
-      if (fetchError) throw fetchError;
-      
-      let error;
-      
-      if (existingGrade?.id) {
-        // Update existing grade
-        const { error: updateError } = await supabase
-          .from('student_grades')
-          .update(gradeData)
-          .eq('user_id', student.user_id)
-          .eq('course_id', courseId);
-        error = updateError;
-      } else {
-        // Insert new grade
+      // If no rows were updated, try to insert a new record
+      if (updateError || !updateError) {  // Check if update had an error or not
         const { error: insertError } = await supabase
           .from('student_grades')
-          .insert(gradeData);
-        error = insertError;
+          .insert(gradeData)
+          .select();
+        
+        // If we get a unique violation, it means the record already exists
+        // and our update should have worked, so we can ignore this error
+        if (insertError && !insertError.message.includes('duplicate key')) {
+          throw insertError;
+        }
       }
-      
-      if (error) throw error;
       
       console.log('Grade saved successfully');
       
