@@ -3,7 +3,7 @@ import type { Database } from '@/types/supabase';
 import { PostgrestError } from '@supabase/supabase-js';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { Course } from '@/types'; 
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom'; 

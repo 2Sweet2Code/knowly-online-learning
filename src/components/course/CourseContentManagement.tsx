@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,46 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Link as LinkIcon, File, Video, BookOpen, Plus, Trash2, Pencil, Download } from 'lucide-react';
-import type { CourseContent } from '@/types/database.types';
+// Define types for the database response and component state
+type DatabaseCourseContent = {
+  id: string;
+  course_id: string;
+  title: string;
+  description: string | null;
+  content_type: string;
+  content_url: string | null;
+  content_text?: string | null;
+  file_name?: string | null;
+  file_path?: string | null;
+  file_type?: string | null;
+  file_size?: number | null;
+  is_visible?: boolean;
+  is_published?: boolean;
+  order?: number | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+};
+
+type CourseContent = {
+  id: string;
+  course_id: string;
+  title: string;
+  description: string | null;
+  content_type: 'file' | 'link' | 'text' | 'video' | 'assignment';
+  content_url: string | null;
+  content_text: string | null;
+  file_name: string | null;
+  file_path: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  is_visible: boolean;
+  is_published: boolean;
+  order: number | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+};
 
 const CONTENT_TYPES = [
   { value: 'file', label: 'File', icon: <File className="h-4 w-4" /> },
@@ -61,7 +100,29 @@ export function CourseContentManagement() {
           .order('position', { ascending: true });
 
         if (error) throw error;
-        setContent(data || []);
+        
+        // Map the data to ensure it matches the CourseContent type
+        const mappedData: CourseContent[] = (data as DatabaseCourseContent[] || []).map(item => ({
+          id: item.id,
+          course_id: item.course_id,
+          title: item.title,
+          description: item.description,
+          content_type: item.content_type as 'file' | 'link' | 'text' | 'video' | 'assignment',
+          content_url: item.content_url,
+          content_text: item.content_text ?? null,
+          file_name: item.file_name ?? null,
+          file_path: item.file_path ?? null,
+          file_type: item.file_type ?? null,
+          file_size: item.file_size ?? null,
+          is_visible: item.is_visible ?? true,
+          is_published: item.is_published ?? true,
+          order: item.order ?? 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          created_by: item.created_by
+        }));
+        
+        setContent(mappedData);
       } catch (error) {
         console.error('Error fetching course content:', error);
       } finally {
@@ -161,7 +222,28 @@ export function CourseContentManagement() {
 
       if (error) throw error;
       
-      setContent(data || []);
+      // Map the data to ensure it matches the CourseContent type
+      const mappedData: CourseContent[] = (data as DatabaseCourseContent[] || []).map(item => ({
+        id: item.id,
+        course_id: item.course_id,
+        title: item.title,
+        description: item.description,
+        content_type: item.content_type as 'file' | 'link' | 'text' | 'video' | 'assignment',
+        content_url: item.content_url,
+        content_text: item.content_text ?? null,
+        file_name: item.file_name ?? null,
+        file_path: item.file_path ?? null,
+        file_type: item.file_type ?? null,
+        file_size: item.file_size ?? null,
+        is_visible: item.is_visible ?? true,
+        is_published: item.is_published ?? true,
+        order: item.order ?? 0,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        created_by: item.created_by
+      }));
+      
+      setContent(mappedData);
       resetForm();
       
     } catch (error) {

@@ -5,11 +5,11 @@ import { formatDistanceToNow } from 'date-fns';
 import { enUS as en, sq } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { AnnouncementModal } from '../dashboard/AnnouncementModal';
 import { useState, useEffect } from 'react';
 import { AnnouncementComments } from '../announcement/AnnouncementComments';
-import type { AnnouncementComment } from '@/types/database.types';
+// AnnouncementComment type is now defined locally
 
 type Profile = {
   name: string;

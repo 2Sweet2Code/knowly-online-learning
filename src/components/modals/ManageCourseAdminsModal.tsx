@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, Loader2, AlertCircle } from "lucide-react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
