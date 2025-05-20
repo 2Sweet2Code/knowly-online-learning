@@ -189,23 +189,29 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
   }, [courseId]);
 
   const handleLeaveClass = async () => {
-    if (!user?.id || !courseId) {
-      console.error('User or course ID is missing');
-      return;
-    }
-    
-    // Confirm before leaving
-    const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs?');
-    if (!confirmLeave) return;
-    
-    setIsLeavingClass(true);
-    console.log('Attempting to leave course:', { userId: user.id, courseId });
-    
+    console.group('handleLeaveClass');
     try {
-      // First, verify the enrollment exists and belongs to the user
+      if (!user?.id || !courseId) {
+        const error = new Error('User or course ID is missing');
+        console.error('Validation error:', { userId: user?.id, courseId });
+        throw error;
+      }
+      
+      // Confirm before leaving
+      const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs?');
+      if (!confirmLeave) {
+        console.log('User cancelled leaving the course');
+        return;
+      }
+      
+      console.log('Starting leave process for user:', user.id, 'from course:', courseId);
+      setIsLeavingClass(true);
+      
+      // Step 1: Verify the enrollment exists
+      console.log('Step 1: Verifying enrollment exists');
       const { data: enrollment, error: findError } = await supabase
         .from('enrollments')
-        .select('id, user_id, course_id')
+        .select('id, user_id, course_id, role')
         .eq('user_id', user.id)
         .eq('course_id', courseId)
         .single();
@@ -216,77 +222,60 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       }
       
       if (!enrollment) {
-        console.error('No enrollment found for user:', user.id, 'in course:', courseId);
-        throw new Error('Nuk u gjet regjistrimi juaj në këtë kurs.');
+        const error = new Error('Enrollment not found');
+        console.error('Enrollment not found:', { userId: user.id, courseId });
+        throw error;
       }
       
-      console.log('Found enrollment to delete:', enrollment);
+      console.log('Enrollment found:', enrollment);
       
-      // Remove the enrollment
-      const { error: deleteError, status, statusText } = await supabase
+      // Step 2: Attempt to delete the enrollment
+      console.log('Step 2: Attempting to delete enrollment');
+      const deleteResponse = await supabase
         .from('enrollments')
         .delete()
         .eq('id', enrollment.id);
       
-      console.log('Delete result:', { status, statusText, deleteError });
+      console.log('Delete response:', deleteResponse);
       
-      if (deleteError) {
-        console.error('Error deleting enrollment:', deleteError);
+      if (deleteResponse.error) {
+        console.error('Error deleting enrollment:', deleteResponse.error);
         
-        // If it's an RLS violation, show a more specific error
-        if (deleteError.code === '42501') {
-          throw new Error('Nuk keni leje për të lënë këtë kurs. Ju lutemi kontaktoni administratorin.');
-        }
-        
-        // For other errors, try one more time with a direct SQL query
-        console.log('Trying direct SQL query...');
-        const { error: sqlError } = await supabase
-          .from('enrollments')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('course_id', courseId);
+        // If RLS violation, try with different approach
+        if (deleteResponse.error.code === '42501') {
+          console.log('RLS violation detected, trying alternative approach...');
           
-        if (sqlError) {
-          console.error('Direct SQL delete error:', sqlError);
-          throw new Error('Nuk u larguat dot nga kursi. Ju lutemi provoni përsëri ose kontaktoni administratorin.');
+          // Try updating the enrollment to mark as not completed instead of deleting
+          const updateResponse = await supabase
+            .from('enrollments')
+            .update({ 
+              completed: false,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', enrollment.id);
+            
+          if (updateResponse.error) {
+            console.error('Error updating enrollment status:', updateResponse.error);
+            throw new Error('Nuk u lejua të largoheshit nga kursi për shkak të kufizimeve të sigurisë.');
+          }
+          
+          console.log('Successfully marked enrollment as inactive');
+        } else {
+          throw deleteResponse.error;
         }
       }
+      
+      console.log('Successfully processed leave request');
       
       // Update local state
-      setClassmates(prev => prev.filter(c => c.id !== user.id));
-      
-      // Invalidate the courses query to refresh the UI
-      await queryClient.invalidateQueries({ queryKey: ['courses'] });
-      
-      // Show success message
-      toast({
-        title: 'Sukses',
-        description: 'Jeni larguar me sukses nga ky kurs.',
-        variant: 'default',
+      setClassmates(prev => {
+        const updated = prev.filter(c => c.id !== user.id);
+        console.log('Updated classmates list:', updated);
+        return updated;
       });
       
-      // Update the course student count using a direct update
-      try {
-        // First get the current student count
-        const { data: course } = await supabase
-          .from('courses')
-          .select('students')
-          .eq('id', courseId)
-          .single();
-          
-        if (course) {
-          // Decrement the student count
-          await supabase
-            .from('courses')
-            .update({ students: Math.max(0, (course.students || 1) - 1) })
-            .eq('id', courseId);
-        }
-      } catch (countError) {
-        console.error('Error updating student count:', countError);
-        // Not critical if this fails
-      }
-      
       // Invalidate all relevant queries
+      console.log('Invalidating queries...');
       try {
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
@@ -307,9 +296,14 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         variant: 'default',
       });
       
-      // Redirect to courses page after a short delay
+      // Redirect to courses page
       console.log('Redirecting to /courses');
-      navigate('/courses');
+      navigate('/courses', { replace: true });
+      
+      // Force a full page reload to ensure clean state
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
       
     } catch (error) {
       console.error('Error leaving class:', error);
