@@ -16,6 +16,7 @@ import { Footer } from "../components/Footer";
 import { ClassmatesList } from "../components/ClassmatesList";
 import { StudentGradesList } from "../components/StudentGradesList";
 import { CourseAnnouncements } from "@/components/course/CourseAnnouncements";
+import { CourseContentManager } from "@/components/course/CourseContentManager";
 
 interface CourseAdmin {
   id: string;
@@ -709,7 +710,11 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
                 
                 {tab === 'content' && (
                   <div>
-                    <CourseContentViewer />
+                    {isInstructor ? (
+                      <CourseContentManager courseId={courseId || ''} isInstructor={isInstructor} />
+                    ) : (
+                      <CourseContentViewer />
+                    )}
                   </div>
                 )}
                 
