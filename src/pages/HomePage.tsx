@@ -15,7 +15,7 @@ const HomePage = () => {
       <main className="flex-grow">
         <Hero />
         <CoursesSection />
-        {user && <MySpaceSection />}
+        {user?.role === 'student' && <MySpaceSection />}
       </main>
       <Footer />
     </div>

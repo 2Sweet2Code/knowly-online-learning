@@ -248,25 +248,38 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     setIsEnrolling(true);
     
     try {
+      const enrollmentData = {
+        user_id: user.id,
+        course_id: courseId,
+        status: 'enrolled',
+        enrolled_at: new Date().toISOString(),
+        progress: 0,
+        last_accessed: new Date().toISOString(),
+        completed: false,
+        completion_date: null,
+        metadata: {}
+      };
+
+      console.log('Attempting to enroll with data:', enrollmentData);
+      
       const { data, error } = await supabase
         .from('enrollments')
-        .insert({
-          user_id: user.id,
-          course_id: courseId,
-          status: 'enrolled',
-          enrolled_at: new Date().toISOString(),
-        })
+        .insert(enrollmentData)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Detailed enrollment error:', error);
+        throw error;
+      }
 
       setIsEnrolled(true);
       
       // Invalidate relevant queries
-      queryClient.invalidateQueries({ 
-        queryKey: ['course', courseId, 'enrollments'] 
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['course', courseId, 'enrollments'] }),
+        queryClient.invalidateQueries({ queryKey: ['student-enrollments', user.id] })
+      ]);
       
       // Update local state
       setIsEnrolled(true);
@@ -276,6 +289,9 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
         title: 'Regjistrimi u krye me sukses',
         description: 'Ju jeni regjistruar me sukses në këtë kurs.',
       });
+      
+      // Refresh the page to ensure all data is up to date
+      window.location.reload();
       
     } catch (error) {
       console.error('Error enrolling in course:', error);
