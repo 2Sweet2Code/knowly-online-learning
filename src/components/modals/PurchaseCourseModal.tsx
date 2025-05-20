@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,9 +17,38 @@ interface PurchaseCourseModalProps {
 export const PurchaseCourseModal = ({ isOpen, onClose, onSuccess, course }: PurchaseCourseModalProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isPurchaseComplete, setIsPurchaseComplete] = useState(false);
+  const [paypalReady, setPaypalReady] = useState(false);
+  const [paypalError, setPaypalError] = useState<string | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Reset error state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPaypalError(null);
+      
+      // Simple check if PayPal is loaded
+      const checkPayPal = () => {
+        if (window.paypal) {
+          setPaypalReady(true);
+          setPaypalError(null);
+        } else {
+          setPaypalReady(false);
+          setPaypalError('PayPal nuk u ngarkua. Ju lutemi rifreskoni faqen ose provoni një metodë tjetër pagese.');
+        }
+      };
+      
+      // Initial check
+      checkPayPal();
+      
+      // Set up interval to check if PayPal loads
+      const interval = setInterval(checkPayPal, 1000);
+      
+      // Clear interval on cleanup
+      return () => clearInterval(interval);
+    }
+  }, [isOpen]);
 
   if (!isOpen || !course) return null;
 
@@ -153,36 +182,63 @@ export const PurchaseCourseModal = ({ isOpen, onClose, onSuccess, course }: Purc
               
               <div className="border-t border-b border-gray-200 py-4 my-4">
                 <h4 className="font-semibold mb-2">Metoda e pagesës:</h4>
-                <PayPalButtons
-                  createOrder={(data, actions) => {
-                    return actions.order.create({
-                      intent: "CAPTURE",
-                      purchase_units: [
-                        {
-                          amount: {
-                            value: (course.price || 0).toString(),
-                            currency_code: "EUR"
-                          },
-                          description: `Blerje e kursit: ${course.title}`
-                        },
-                      ],
-                    });
-                  }}
-                  onApprove={(data, actions) => {
-                    return actions.order!.capture().then(() => {
-                      handleEnrollAfterPayment();
-                    });
-                  }}
-                  onError={(err) => {
-                    console.error(err);
-                    toast({
-                      title: "Gabim!",
-                      description: "Ndodhi një problem gjatë procesimit të pagesës. Ju lutemi provoni përsëri.",
-                      variant: "destructive",
-                    });
-                  }}
-                  style={{ layout: "vertical" }}
-                />
+                
+                {paypalError ? (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative">
+                    <p>{paypalError}</p>
+                    <button 
+                      onClick={() => window.location.reload()}
+                      className="mt-2 text-sm text-red-700 underline hover:text-red-900"
+                    >
+                      Rifresko faqen
+                    </button>
+                  </div>
+                ) : !paypalReady ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                    <span className="ml-2">Duke ngarkuar PayPal...</span>
+                  </div>
+                ) : (
+                  <div className="min-h-[200px] flex items-center justify-center">
+                    <PayPalButtons
+                      createOrder={(data, actions) => {
+                        return actions.order.create({
+                          intent: "CAPTURE",
+                          purchase_units: [
+                            {
+                              amount: {
+                                value: (course.price || 0).toString(),
+                                currency_code: "EUR"
+                              },
+                              description: `Blerje e kursit: ${course.title}`
+                            },
+                          ],
+                        });
+                      }}
+                      onApprove={(data, actions) => {
+                        return actions.order!.capture().then(() => {
+                          handleEnrollAfterPayment();
+                        });
+                      }}
+                      onError={(err) => {
+                        console.error('PayPal Error:', err);
+                        setPaypalError('Ndodhi një problem me PayPal. Ju lutemi provoni përsëri ose zgjidhni një metodë tjetër pagese.');
+                      }}
+                      style={{ 
+                        layout: "vertical",
+                        color: 'gold',
+                        shape: 'rect',
+                        label: 'pay',
+                        height: 45
+                      }}
+                      forceReRender={[course.id, paypalReady]}
+                    />
+                  </div>
+                )}
+                
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Pagesat përpunohen në mënyrë të sigurt përmes PayPal
+                </p>
               </div>
               
               <p className="text-sm text-gray-600 mb-4">

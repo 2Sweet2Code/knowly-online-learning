@@ -111,14 +111,39 @@ const App = () => {
     };
   }, []);
   
+  // Create a state to track if PayPal is ready
+  const [paypalReady, setPaypalReady] = useState(false);
+
+  // Load PayPal script in a way that doesn't block the app
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = `https://www.paypal.com/sdk/js?client-id=test&currency=EUR&intent=capture`;
+    script.async = true;
+    script.onload = () => setPaypalReady(true);
+    script.onerror = () => {
+      console.warn('Failed to load PayPal script');
+      setPaypalReady(false);
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
   return (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      <PayPalScriptProvider options={{ 
-        clientId: "test", // Replace with your PayPal client ID in production
-        currency: "EUR",
-        intent: "capture"
-      }}>
+      <PayPalScriptProvider 
+        options={{ 
+          clientId: "test",
+          currency: "EUR",
+          intent: "capture",
+          components: paypalReady ? 'buttons' : '',
+          dataSdkIntegrationSource: 'integrationbuilder_sc'
+        }}
+        deferLoading={true}
+      >
         <AuthProvider>
           <TooltipProvider>
             <Toaster />

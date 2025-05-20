@@ -67,8 +67,8 @@ export const CourseCard = ({ course }: CourseCardProps) => {
   const placeholderImage = "/fallback-image.png";
   
   return (
-    <Link to={`/courses/${course.id}`} className="block bg-white border border-lightGray rounded-lg overflow-hidden shadow-sm transition-all hover:shadow-md hover:-translate-y-1 h-full flex flex-col">
-      <div className="h-48 bg-cream overflow-hidden"> {/* Increased height for better image display */}
+    <Link to={`/courses/${course.id}`} className="block bg-white border border-lightGray rounded-lg overflow-hidden shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
+      <div className="h-44 bg-cream overflow-hidden"> {/* Ensure background color shows if image fails */}
         <img
           // Use course image if available, otherwise use placeholder
           src={course.image || placeholderImage} 
@@ -97,36 +97,31 @@ export const CourseCard = ({ course }: CourseCardProps) => {
         </div>
         
         {showAccessCode && accessCode && (
-          <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-lg">
-            <div className="flex flex-col space-y-2">
-              <div className="flex items-center text-sm font-medium text-amber-800">
-                <Key className="h-4 w-4 mr-2 flex-shrink-0" />
-                <span className="font-semibold">Kodi i aksesit</span>
-              </div>
-              <div className="flex items-center justify-between bg-white px-3 py-2 rounded-md border border-amber-200">
-                <span className="font-mono text-base font-semibold text-amber-900">
-                  {accessCode}
-                </span>
-                <button 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(accessCode);
-                    // You might want to add a toast notification here
-                  }}
-                  className="ml-2 p-1.5 text-amber-500 hover:bg-amber-100 rounded-full transition-colors"
-                  title="Kopjo kodin"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                </button>
-              </div>
+          <div className="mb-2">
+            <div className="inline-flex items-center text-sm font-medium text-brown-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-md">
+              <Key className="h-3.5 w-3.5 mr-1.5 flex-shrink-0" />
+              <span className="font-semibold">Kodi i aksesit:</span>
+              <span className="ml-1.5 font-mono bg-white px-2 py-0.5 rounded border border-amber-200">
+                {accessCode}
+              </span>
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigator.clipboard.writeText(accessCode);
+                  // You might want to add a toast notification here
+                }}
+                className="ml-2 text-amber-600 hover:text-brown-800 transition-colors"
+                title="Kopjo kodin"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
             </div>
           </div>
         )}
-        <h3 className="text-xl font-playfair font-bold mb-2 mt-1">
+        <h3 className="text-xl font-playfair font-bold mb-2">
           {course.title.replace(/\s*\[.*?\]\s*/, '')}
         </h3>
         <p className="text-sm text-gray-600 flex-grow mb-3">
@@ -146,16 +141,14 @@ export const CourseCard = ({ course }: CourseCardProps) => {
           </div>
         </div>
         
-        <div className="mt-auto pt-3 border-t border-gray-100">
-          <div className="flex items-center justify-between">
-            {course.isPaid ? (
-              <span className="font-bold text-brown">{course.price}€</span>
-            ) : (
-              <span className="font-bold text-green-600">Falas</span>
-            )}
-            <div className="btn btn-primary text-sm">
-              Shiko Kursin
-            </div>
+        <div className="flex items-center justify-between">
+          {course.isPaid ? (
+            <span className="font-bold text-brown">{course.price}€</span>
+          ) : (
+            <span className="font-bold text-green-600">Falas</span>
+          )}
+          <div className="btn btn-primary text-sm">
+            Shiko Kursin
           </div>
         </div>
       </div>
