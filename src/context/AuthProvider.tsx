@@ -82,7 +82,7 @@ interface AuthState {
   authInitialized: boolean;
 }
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<AuthState>({
     user: null,
     session: null,
