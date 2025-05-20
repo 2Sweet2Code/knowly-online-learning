@@ -189,154 +189,88 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
   }, [courseId]);
 
   const handleLeaveClass = async () => {
-    console.group('handleLeaveClass');
+    if (!user?.id || !courseId) {
+      toast({
+        title: 'Gabim',
+        description: 'ID-ja e përdoruesit ose e kursit nuk është e vlefshme.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const confirmLeave = window.confirm(
+      'A jeni i sigurt që dëshironi të dilni nga ky kurs? Kjo do të fshijë të gjitha të dhënat tuaja të kursit.'
+    );
+
+    if (!confirmLeave) return;
+
+    setIsLeavingClass(true);
+
     try {
-      if (!user?.id || !courseId) {
-        const error = new Error('User or course ID is missing');
-        console.error('Validation error:', { userId: user?.id, courseId });
-        throw error;
-      }
-      
-      // Confirm before leaving
-      const confirmLeave = window.confirm('A jeni i sigurt që dëshironi të dilni nga ky kurs? Kjo do të fshijë të gjitha të dhënat tuaja të kursit.');
-      if (!confirmLeave) {
-        console.log('User cancelled leaving the course');
-        return;
-      }
-      
-      console.log('Starting leave process for user:', user.id, 'from course:', courseId);
-      setIsLeavingClass(true);
-      
-      // Step 1: Verify the enrollment exists
-      console.log('Step 1: Verifying enrollment exists');
+      // 1. Find the enrollment
       const { data: enrollment, error: findError } = await supabase
         .from('enrollments')
-        .select('id, user_id, course_id, role')
+        .select('id')
         .eq('user_id', user.id)
         .eq('course_id', courseId)
         .single();
-      
-      if (findError) {
-        console.error('Error finding enrollment:', findError);
-        throw new Error('Gabim gjatë gjetjes së regjistrimit tuaj në këtë kurs.');
+
+      if (findError || !enrollment) {
+        throw new Error('Nuk u gjet regjistrimi juaj në këtë kurs.');
       }
-      
-      if (!enrollment) {
-        const error = new Error('Enrollment not found');
-        console.error('Enrollment not found:', { userId: user.id, courseId });
-        throw error;
-      }
-      
-      console.log('Enrollment found:', enrollment);
-      
-      // Step 2: Delete related data
-      console.log('Step 2: Deleting related data');
-      
-      // First, try to update the enrollment to mark as completed: false
-      const { error: updateError } = await supabase
+
+      // 2. Delete the enrollment
+      const { error: deleteError } = await supabase
         .from('enrollments')
-        .update({ 
-          completed: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id)
-        .eq('course_id', courseId);
-      
-      if (updateError) {
-        console.error('Error updating enrollment status:', updateError);
-        
-        // If update fails, try to delete as a fallback
-        const { error: deleteError } = await supabase
-          .from('enrollments')
+        .delete()
+        .eq('id', enrollment.id);
+
+      if (deleteError) throw deleteError;
+
+      // 3. Clean up related data in parallel
+      await Promise.all([
+        supabase
+          .from('student_grades')
           .delete()
           .eq('user_id', user.id)
-          .eq('course_id', courseId);
-        
-        if (deleteError) {
-          console.error('Error deleting from enrollments:', deleteError);
-          throw new Error('Could not remove you from the course. Please contact support.');
-        }
-      }
+          .eq('course_id', courseId),
+        supabase
+          .from('course_comments')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('course_id', courseId),
+        supabase
+          .from('announcement_comments')
+          .delete()
+          .eq('user_id', user.id)
+      ]);
+
+      // 4. Update UI and redirect
+      setClassmates(prev => prev.filter(c => c.id !== user.id));
       
-      // Delete from student_grades table
-      const { error: gradesError } = await supabase
-        .from('student_grades')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('course_id', courseId);
-      
-      if (gradesError) {
-        console.error('Error deleting from student_grades:', gradesError);
-      }
-      
-      // Delete from course_comments table
-      const { error: commentsError } = await supabase
-        .from('course_comments')
-        .delete()
-        .eq('user_id', user.id)
-        .eq('course_id', courseId);
-      
-      if (commentsError) {
-        console.error('Error deleting from course_comments:', commentsError);
-      }
-      
-      // Delete from announcement_comments table
-      const { error: announcementCommentsError } = await supabase
-        .from('announcement_comments')
-        .delete()
-        .eq('user_id', user.id);
-      
-      if (announcementCommentsError) {
-        console.error('Error deleting from announcement_comments:', announcementCommentsError);
-      }
-      
-      console.log('Successfully cleaned up user data from all related tables');
-      
-      console.log('Successfully processed leave request');
-      
-      // Update local state
-      setClassmates(prev => {
-        const updated = prev.filter(c => c.id !== user.id);
-        console.log('Updated classmates list:', updated);
-        return updated;
-      });
-      
-      // Invalidate all relevant queries
-      console.log('Invalidating queries...');
-      try {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
-          queryClient.invalidateQueries({ queryKey: ['course', courseId] }),
-          queryClient.invalidateQueries({ queryKey: ['courses'] }),
-          queryClient.invalidateQueries({ queryKey: ['user-enrollments', user.id] })
-        ]);
-        console.log('Successfully invalidated queries');
-      } catch (invalidateError) {
-        console.error('Error invalidating queries:', invalidateError);
-        // Continue even if invalidation fails
-      }
-      
+      // Invalidate queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
+        queryClient.invalidateQueries({ queryKey: ['course', courseId] }),
+        queryClient.invalidateQueries({ queryKey: ['courses'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-enrollments', user.id] })
+      ]);
+
       // Show success message
       toast({
         title: 'Sukses',
         description: 'Jeni larguar me sukses nga ky kurs.',
         variant: 'default',
       });
-      
+
       // Redirect to courses page
-      console.log('Redirecting to /courses');
-      navigate('/courses', { replace: true });
-      
-      // Force a full page reload to ensure clean state
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
-      
+      navigate('/courses');
+      window.location.reload();
     } catch (error) {
-      console.error('Error leaving class:', error);
+      console.error('Error leaving course:', error);
       toast({
-        title: 'Gabim!',
-        description: 'Ndodhi një problem gjatë daljes nga kursi. Ju lutemi provoni përsëri.',
+        title: 'Gabim',
+        description: 'Ndodhi një gabë gjatë largimit nga kursi. Ju lutemi provoni përsëri.',
         variant: 'destructive',
       });
     } finally {
