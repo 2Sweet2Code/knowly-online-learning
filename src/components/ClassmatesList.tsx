@@ -232,16 +232,30 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       // Step 2: Delete related data
       console.log('Step 2: Deleting related data');
       
-      // Delete from enrollments table
-      const { error: enrollmentError } = await supabase
+      // First, try to update the enrollment to mark as completed: false
+      const { error: updateError } = await supabase
         .from('enrollments')
-        .delete()
+        .update({ 
+          completed: false,
+          updated_at: new Date().toISOString()
+        })
         .eq('user_id', user.id)
         .eq('course_id', courseId);
       
-      if (enrollmentError) {
-        console.error('Error deleting from enrollments:', enrollmentError);
-        // Continue even if this fails, try other tables
+      if (updateError) {
+        console.error('Error updating enrollment status:', updateError);
+        
+        // If update fails, try to delete as a fallback
+        const { error: deleteError } = await supabase
+          .from('enrollments')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('course_id', courseId);
+        
+        if (deleteError) {
+          console.error('Error deleting from enrollments:', deleteError);
+          throw new Error('Could not remove you from the course. Please contact support.');
+        }
       }
       
       // Delete from student_grades table
