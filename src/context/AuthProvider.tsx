@@ -8,7 +8,7 @@ import { AuthContext, type AuthContextType } from './auth-context';
 import { User } from '@/types';
 
 // Function to create or update user profile in profiles table
-const createUserProfile = async (userId: string, name: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
+const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
     // First, wait for the user to be confirmed in the auth.users table
     const maxRetries = 5;
@@ -17,10 +17,10 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
     
     while (retries < maxRetries && !userConfirmed) {
       try {
-        // Try to get the user from auth.users
-        const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
+        // Try to sign in with the user's ID as a way to verify they exist
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
-        if (user && !userError) {
+        if (user && user.id === userId && !userError) {
           userConfirmed = true;
           break;
         }
@@ -34,33 +34,39 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
     }
     
     if (!userConfirmed) {
-      console.error('User not confirmed in auth.users after multiple retries');
+      console.error('User not confirmed after multiple retries');
       return null;
     }
 
-    // Now create the profile
-    const { data: profileData, error: rpcError } = await supabase
-      .rpc('create_user_profile', {
-        p_user_id: userId,
-        p_name: name,
-        p_role: role
-      });
+    // Now create the profile using a direct insert instead of RPC
+    const { data: profileData, error: insertError } = await supabase
+      .from('profiles')
+      .insert([
+        {
+          id: userId,
+          name: name,
+          role: role
+        }
+      ])
+      .select()
+      .single();
 
-    if (rpcError) {
-      console.error('Error creating user profile via RPC:', rpcError);
+    if (insertError) {
+      console.error('Error creating user profile:', insertError);
       return null;
     }
 
-    if (!profileData || !profileData[0]) {
-      console.error('No profile data returned from RPC');
+    if (!profileData) {
+      console.error('No profile data returned from insert');
       return null;
     }
 
     return {
-      id: profileData[0].id,
-      name: profileData[0].name,
-      role: profileData[0].role
-    } as User;
+      id: profileData.id,
+      name: profileData.name,
+      email: email,
+      role: profileData.role as 'student' | 'instructor' | 'admin'
+    };
 
   } catch (error) {
     console.error('Unexpected error in createUserProfile:', error);
@@ -418,7 +424,7 @@ setUser({
       }
       
       // Create user profile in the database
-      const profile = await createUserProfile(signUpData.user.id, name, role);
+      const profile = await createUserProfile(signUpData.user.id, name, email, role);
       
       if (!profile) {
         // If profile creation fails, try to delete the auth user to keep things clean
