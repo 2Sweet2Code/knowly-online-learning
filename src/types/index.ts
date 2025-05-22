@@ -27,6 +27,7 @@ export interface Course {
   isPaid: boolean;
   accessCode?: string;
   allow_admin_applications: boolean;
+  preview_content?: string; // HTML content for course preview
   created_at: string;
   updated_at: string;
   enrollments?: Array<{

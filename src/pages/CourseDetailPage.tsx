@@ -17,6 +17,7 @@ import { ClassmatesList } from "../components/ClassmatesList";
 import { StudentGradesList } from "../components/StudentGradesList";
 import { CourseAnnouncements } from "@/components/course/CourseAnnouncements";
 import { CourseContentManager } from "@/components/course/CourseContentManager";
+import { CoursePreview } from "@/components/course/CoursePreview";
 
 interface CourseAdmin {
   id: string;
@@ -162,6 +163,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     updated_at: string;
     accessCode: string;
     allow_admin_applications: boolean;
+    preview_content: string;
   }
 
   // Map database course to our frontend Course type
@@ -173,6 +175,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       image: dbCourse.image,
       category: dbCourse.category as 'programim' | 'dizajn' | 'marketing' | 'other',
       instructor: dbCourse.instructor,
+      instructor_id: dbCourse.instructor_id,
       instructorId: dbCourse.instructor_id,
       instructor_name: dbCourse.instructor, // Will be updated later if available
       students: dbCourse.students,
@@ -182,7 +185,8 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       created_at: dbCourse.created_at,
       updated_at: dbCourse.updated_at,
       accessCode: dbCourse.accessCode,
-      allow_admin_applications: dbCourse.allow_admin_applications
+      allow_admin_applications: dbCourse.allow_admin_applications,
+      preview_content: dbCourse.preview_content
     };
     
     console.log('Mapped course:', {
@@ -701,40 +705,53 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
               
               {/* Tab content */}
               <div>
-                {tab === 'stream' && courseId && (
-                  <CourseAnnouncements 
-                    courseId={courseId} 
-                    isInstructor={isInstructor} 
+                {!isEnrolled && !isInstructor ? (
+                  // Show course preview for non-enrolled users
+                  <CoursePreview 
+                    course={course}
+                    onEnrollClick={handleEnrollClick}
+                    isAuthenticated={!!user}
+                    isEnrolling={isEnrolling}
                   />
-                )}
-                
-                {tab === 'content' && (
-                  <div>
-                    {isInstructor ? (
-                      <CourseContentManager courseId={courseId || ''} isInstructor={isInstructor} />
-                    ) : (
-                      <CourseContentViewer />
+                ) : (
+                  // Show regular course content for enrolled users and instructors
+                  <>
+                    {tab === 'stream' && courseId && (
+                      <CourseAnnouncements 
+                        courseId={courseId} 
+                        isInstructor={isInstructor} 
+                      />
                     )}
-                  </div>
-                )}
-                
-                {tab === 'students' && (
-                  <div>
-                    <ClassmatesList courseId={courseId} />
-                  </div>
-                )}
-                
-                {tab === 'grades' && (isInstructor || isEnrolled) && (
-                  <div>
-                    <StudentGradesList courseId={courseId} />
-                  </div>
-                )}
-                
-                {tab === 'settings' && (isInstructor || isClassAdmin) && (
-                  <div>
-                    <h2 className="text-lg font-medium text-gray-900 mb-4">Course Settings</h2>
-                    {/* Settings content */}
-                  </div>
+                    
+                    {tab === 'content' && (
+                      <div>
+                        {isInstructor ? (
+                          <CourseContentManager courseId={courseId || ''} isInstructor={isInstructor} />
+                        ) : (
+                          <CourseContentViewer />
+                        )}
+                      </div>
+                    )}
+                    
+                    {tab === 'students' && (
+                      <div>
+                        <ClassmatesList courseId={courseId} />
+                      </div>
+                    )}
+                    
+                    {tab === 'grades' && (isInstructor || isEnrolled) && (
+                      <div>
+                        <StudentGradesList courseId={courseId} />
+                      </div>
+                    )}
+                    
+                    {tab === 'settings' && (isInstructor || isClassAdmin) && (
+                      <div>
+                        <h2 className="text-lg font-medium text-gray-900 mb-4">Course Settings</h2>
+                        {/* Settings content */}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
