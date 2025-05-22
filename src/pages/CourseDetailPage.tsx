@@ -18,6 +18,7 @@ import { StudentGradesList } from "../components/StudentGradesList";
 import { CourseAnnouncements } from "@/components/course/CourseAnnouncements";
 import { CourseContentManager } from "@/components/course/CourseContentManager";
 import { CoursePreview } from "@/components/course/CoursePreview";
+import { CourseSettings } from "@/components/course/CourseSettings";
 
 interface CourseAdmin {
   id: string;
@@ -745,10 +746,19 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
                       </div>
                     )}
                     
-                    {tab === 'settings' && (isInstructor || isClassAdmin) && (
-                      <div>
-                        <h2 className="text-lg font-medium text-gray-900 mb-4">Course Settings</h2>
-                        {/* Settings content */}
+                    {tab === 'settings' && (isInstructor || isClassAdmin) && course && (
+                      <div className="space-y-6">
+                        <h2 className="text-2xl font-bold text-gray-900">Course Settings</h2>
+                        <CourseSettings 
+                          courseId={course.id}
+                          initialPreviewContent={course.preview_content || ''}
+                          onUpdate={() => {
+                            // Invalidate course query to refresh the data
+                            queryClient.invalidateQueries({
+                              queryKey: ['course', courseId]
+                            });
+                          }}
+                        />
                       </div>
                     )}
                   </>
