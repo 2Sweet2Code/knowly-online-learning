@@ -13,6 +13,30 @@ export const CourseCard = ({ course }: CourseCardProps) => {
   const { user } = useAuth();
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [instructorName, setInstructorName] = useState(course.instructor || 'Instructor');
+  
+  // Fetch instructor name when component mounts
+  useEffect(() => {
+    const fetchInstructorName = async () => {
+      if (!course.instructor_id) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', course.instructor_id)
+          .single();
+          
+        if (!error && data) {
+          setInstructorName(data.name);
+        }
+      } catch (error) {
+        console.error('Error fetching instructor name:', error);
+      }
+    };
+    
+    fetchInstructorName();
+  }, [course.instructor_id]);
   
   // Check enrollment status when component mounts
   useEffect(() => {
@@ -137,7 +161,7 @@ export const CourseCard = ({ course }: CourseCardProps) => {
           </div>
           <div className="flex items-center">
             <BookOpen className="h-4 w-4 mr-1" />
-            <span>nga: {course.instructor}</span>
+            <span>nga: {instructorName}</span>
           </div>
         </div>
         
