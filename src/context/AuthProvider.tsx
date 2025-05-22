@@ -20,18 +20,12 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
     };
 
     // First, try to insert the new profile
-    const { data: newProfile, error: createError } = await supabase
+    const { data: newProfile, error: insertError } = await supabase
       .from('profiles')
       .insert(profileData)
       .select()
       .single();
 
-    // If the error is not a duplicate key error, throw it
-    if (createError && !createError.code?.includes('23505')) {
-      throw createError;
-    }
-
-    // If we have a new profile, return it
     if (newProfile) {
       return newProfile as User;
     }
@@ -48,13 +42,29 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
       .select()
       .single();
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error('Error updating profile:', updateError);
+      
+      // If it's a duplicate key error, try to fetch the existing profile
+      if (updateError.code === '23505') {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        if (existingProfile) {
+          return existingProfile as User;
+        }
+      }
+      
+      return null;
+    }
     
-    // If we got here, the update was successful
     return updatedProfile as User;
     
   } catch (error) {
-    console.error('Error creating/updating profile:', error);
+    console.error('Error in createUserProfile:', error);
     return null;
   }
 };
