@@ -10,6 +10,35 @@ import { User } from '@/types';
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
+    // First, wait for the user to be confirmed in the auth.users table
+    const maxRetries = 5;
+    let retries = 0;
+    let userConfirmed = false;
+    
+    while (retries < maxRetries && !userConfirmed) {
+      try {
+        // Try to get the user from auth.users
+        const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(userId);
+        
+        if (user && !userError) {
+          userConfirmed = true;
+          break;
+        }
+      } catch (e) {
+        console.log(`Attempt ${retries + 1}: User not yet available, retrying...`);
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      retries++;
+    }
+    
+    if (!userConfirmed) {
+      console.error('User not confirmed in auth.users after multiple retries');
+      return null;
+    }
+
+    // Now create the profile
     const { data: profileData, error: rpcError } = await supabase
       .rpc('create_user_profile', {
         p_user_id: userId,
