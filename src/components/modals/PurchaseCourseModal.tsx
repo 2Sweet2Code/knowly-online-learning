@@ -84,6 +84,17 @@ export const PurchaseCourseModal = ({ isOpen, onClose, onSuccess, course }: Purc
         return;
       }
       
+      // Check if user is an instructor
+      const { data: userProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      
+      if (profileError) throw profileError;
+      
+      const isInstructor = userProfile?.role === 'instructor' || userProfile?.role === 'admin';
+      
       // Create enrollment
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('enrollments')
@@ -94,18 +105,21 @@ export const PurchaseCourseModal = ({ isOpen, onClose, onSuccess, course }: Purc
           completed: false,
           paid: true,
           payment_amount: course.price || 0,
-          payment_date: new Date().toISOString()
+          payment_date: new Date().toISOString(),
+          is_instructor: isInstructor
         })
         .select()
         .single();
       
       if (enrollmentError) throw enrollmentError;
       
-      // Update course student count
-      await supabase
-        .from('courses')
-        .update({ students: (course.students || 0) + 1 })
-        .eq('id', course.id);
+      // Only increment student count if the user is not an instructor or admin
+      if (!isInstructor) {
+        await supabase
+          .from('courses')
+          .update({ students: (course.students || 0) + 1 })
+          .eq('id', course.id);
+      }
       
       // Invalidate queries to refetch enrollments and courses
       queryClient.invalidateQueries({ queryKey: ['enrollments', user.id] });

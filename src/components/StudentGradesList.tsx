@@ -5,8 +5,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Save } from "lucide-react";
 
-type Profiles = {
+type Profile = {
+  id: string;
   name: string | null;
+  email: string | null;
+  role: string | null;
 };
 
 type StudentGradeRow = {
@@ -14,7 +17,7 @@ type StudentGradeRow = {
   grade: number | null;
   feedback: string | null;
   updated_at: string | null;
-  updated_by: Profiles | null;
+  updated_by: { name: string | null } | null;
 };
 
 interface StudentGradesListProps {
@@ -30,12 +33,8 @@ interface GradeData {
 
 interface Enrollment {
   user_id: string;
-  profiles: {
-    id: string;
-    name: string | null;
-    email: string | null;
-    role: string | null;
-  };
+  is_instructor: boolean;
+  profiles: Profile | null;
 }
 
 interface StudentGrade {
@@ -68,14 +67,22 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
     setError(null);
     
     try {
-      // Get all enrolled students
-      const { data: enrolledStudents, error: enrollmentError } = await supabase
+      // Get all enrolled students (excluding instructors and admins)
+      const { data: enrollmentsData, error: enrollmentError } = await supabase
         .from('enrollments')
         .select(`
           user_id,
+          is_instructor,
           profiles:user_id (id, name, email, role)
         `)
-        .eq('course_id', courseId);
+        .eq('course_id', courseId)
+        .eq('is_instructor', false);
+        
+      const enrolledStudents = enrollmentsData?.map(e => ({
+        user_id: e.user_id,
+        is_instructor: e.is_instructor,
+        profiles: Array.isArray(e.profiles) ? e.profiles[0] : e.profiles
+      })) as Enrollment[];
       
       if (enrollmentError) {
         console.error('Error fetching enrollments:', enrollmentError);
@@ -124,7 +131,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
         }
         
         // Combine enrollment and grade data
-        studentsWithGrades = (enrolledStudents as Enrollment[])
+        studentsWithGrades = enrolledStudents
           .filter(enrollment => enrollment.profiles?.id) // Filter out enrollments without profiles
           .map((enrollment) => {
             const gradeInfo = gradesMap.get(enrollment.profiles!.id);
@@ -145,7 +152,7 @@ export const StudentGradesList = ({ courseId }: StudentGradesListProps) => {
       } catch (gradesError) {
         console.error('Error processing grades:', gradesError);
         // If we can't fetch grades, just return the student list without grades
-        studentsWithGrades = (enrolledStudents as Enrollment[])
+        studentsWithGrades = enrolledStudents
           .filter(enrollment => enrollment.profiles?.id) // Filter out enrollments without profiles
           .map((enrollment) => ({
             id: enrollment.profiles!.id,  // Non-null assertion since we filtered nulls

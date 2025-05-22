@@ -89,6 +89,15 @@ export const JoinCourseModal = ({ isOpen, onClose, onSuccess }: JoinCourseModalP
         return;
       }
       
+      // Check if user is an instructor
+      const { data: userProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      
+      if (profileError) throw profileError;
+      
       // Create enrollment
       const { data: enrollment, error: enrollmentError } = await supabase
         .from('enrollments')
@@ -96,18 +105,21 @@ export const JoinCourseModal = ({ isOpen, onClose, onSuccess }: JoinCourseModalP
           user_id: user.id,
           course_id: course.id,
           progress: 0,
-          completed: false
+          completed: false,
+          is_instructor: userProfile?.role === 'instructor' || userProfile?.role === 'admin'
         })
         .select()
         .single();
       
       if (enrollmentError) throw enrollmentError;
       
-      // Update course student count
-      await supabase
-        .from('courses')
-        .update({ students: course.students + 1 })
-        .eq('id', course.id);
+      // Only increment student count if the user is not an instructor or admin
+      if (userProfile?.role !== 'instructor' && userProfile?.role !== 'admin') {
+        await supabase
+          .from('courses')
+          .update({ students: (course.students || 0) + 1 })
+          .eq('id', course.id);
+      }
       
       // Invalidate queries to refetch enrollments and courses
       queryClient.invalidateQueries({ queryKey: ['enrollments', user.id] });
