@@ -23,34 +23,19 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
     const profileData = {
       id: userId,
       name,
-      email: '', // This will be updated from auth user
       role,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      user_metadata: {
-        name,
-        role,
-        full_name: name,
-        avatar_url: ''
-      }
+      updated_at: new Date().toISOString()
     };
 
     if (existingProfile) {
-      // Extract existing metadata if it exists
-      const existingMetadata = (existingProfile as User).user_metadata || {};
-      
+      // Update existing profile
       const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
         .update({
           name,
           role,
-          updated_at: new Date().toISOString(),
-          user_metadata: {
-            ...existingMetadata,
-            name,
-            role,
-            full_name: name
-          }
+          updated_at: new Date().toISOString()
         })
         .eq('id', userId)
         .select()
@@ -386,6 +371,17 @@ setUser({
     try {
       setIsLoading(true);
       
+      // First, check if a user with this email already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('name', name)
+        .single();
+      
+      if (existingUser) {
+        throw new Error('A user with this name already exists');
+      }
+      
       // Sign up the user with Supabase Auth
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -393,9 +389,7 @@ setUser({
         options: {
           data: {
             name,
-            role,
-            full_name: name,
-            avatar_url: ''
+            role
           },
           emailRedirectTo: `${window.location.origin}/auth/callback`
         }
@@ -424,20 +418,8 @@ setUser({
         id: signUpData.user.id,
         name: name,
         email: email,
-        role: role,
-        user_metadata: {
-          name: name,
-          role: role,
-          full_name: name,
-          avatar_url: ''
-        }
+        role: role
       });
-      
-      // Update the user's email in the profile
-      await supabase
-        .from('profiles')
-        .update({ email: email })
-        .eq('id', signUpData.user.id);
       
       // Show success message
       toast({
