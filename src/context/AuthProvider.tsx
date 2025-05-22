@@ -226,10 +226,31 @@ setUser({
     const maxRetries = 3;
     let retryTimeout: NodeJS.Timeout | null = null;
     
-    const cleanup = () => {
-      isMounted = false;
-      if (retryTimeout) clearTimeout(retryTimeout);
-    };
+    // Set up auth state change listener first
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!isMounted) return;
+        
+        console.log('Auth state changed:', event);
+        setSession(session);
+        
+        if (session?.user) {
+          try {
+            await fetchAndSetUser(session.user.id);
+          } catch (error) {
+            console.error('Error in auth state change handler:', error);
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+        }
+        
+        if (isMounted) {
+          setAuthInitialized(true);
+          setIsLoading(false);
+        }
+      }
+    );
 
     const checkAuth = async () => {
       try {
@@ -282,61 +303,9 @@ setUser({
         }
       }
     };
-    
-    const attemptFetch = async () => {
-      try {
-        const { data: { session: currentSession }, error } = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<{ data: { session: Session | null }, error: Error | null }>((_, reject) => {
-            setTimeout(() => reject(new Error('Auth check timeout')), 5000);
-          })
-        ]);
-
-        if (error) throw error;
-
-        if (currentSession?.user) {
-          await fetchAndSetUser(currentSession.user.id);
-        } else {
-          setUser(null);
-          setSession(null);
-        }
-
-        if (isMounted) {
-          setAuthInitialized(true);
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error('[Auth] Error during auth check:', error);
-        
-        if (isMounted && retryCount < maxRetries) {
-          // Retry with exponential backoff
-          const delay = 1000 * Math.pow(2, retryCount);
-          retryCount++;
-          console.log(`[Auth] Retrying auth check (${retryCount}/${maxRetries}) in ${delay}ms`);
-          
-          // Clear any existing timeout
-          if (retryTimeout) clearTimeout(retryTimeout);
-          
-          // Set a new timeout for the retry
-          retryTimeout = setTimeout(() => {
-            if (isMounted) void attemptFetch();
-          }, delay);
-          
-          return;
-        }
-        
-        // If we've exhausted retries, continue with unauthenticated state
-        if (isMounted) {
-          console.warn('[Auth] Max retries reached, continuing without authentication');
-          setUser(null);
-          setAuthInitialized(true);
-          setIsLoading(false);
-        }
-      }
-    };
 
     // Initial check
-    void attemptFetch();
+    void checkAuth();
     
     // Global timeout to prevent infinite loading
     const globalTimeout = setTimeout(() => {
@@ -353,54 +322,64 @@ setUser({
       isMounted = false;
       if (retryTimeout) clearTimeout(retryTimeout);
       if (globalTimeout) clearTimeout(globalTimeout);
-    };
-    
-    // Handle auth state changes after initial check
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!isMounted) return;
-        
-        console.log('Auth state changed:', event);
-        setSession(session);
-        
-        if (session?.user) {
-          try {
-            await fetchAndSetUser(session.user.id);
-          } catch (error) {
-            console.error('Error in auth state change handler:', error);
-          }
-        } else {
-          setUser(null);
-          setIsLoading(false);
-        }
-      }
-    );
-
-    return () => {
-      isMounted = false;
-      if (retryTimeout) clearTimeout(retryTimeout);
-      if (globalTimeout) clearTimeout(globalTimeout);
       authListener?.subscription.unsubscribe();
     };
   }, [fetchAndSetUser, authInitialized, getErrorMessage, setIsLoading, setAuthInitialized, setSession, setUser]);
 
   // Login function
-  const signIn = React.useCallback(async (email: string, password: string) => {
+  const signIn = React.useCallback(async (email: string, password: string): Promise<void> => {
     try {
-      setIsLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
+      setState(prev => ({ ...prev, isLoading: true }));
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
+      
+      // If we have a session, update the user state immediately
+      if (data?.session?.user) {
+        // Fetch and set the user profile
+        await fetchAndSetUser(data.session.user.id);
+        
+        // Get the updated user data from the profiles table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.session.user.id)
+          .single();
+          
+        if (profileError) throw profileError;
+        
+        if (profile) {
+          const userData = {
+            id: profile.id,
+            name: profile.name || '',
+            email: profile.email || '',
+            role: (profile.role as 'student' | 'instructor' | 'admin') || 'student',
+            user_metadata: {
+              name: profile.name,
+              role: profile.role,
+              full_name: profile.full_name || profile.name,
+              avatar_url: profile.avatar_url || ''
+            }
+          };
+          
+          setState({
+            user: userData,
+            session: data.session,
+            isLoading: false,
+            authInitialized: true
+          });
+        }
+      }
     } catch (error) {
       console.error('Login error:', error);
+      setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(getErrorMessage(error));
-    } finally {
-      setIsLoading(false);
     }
-  }, [getErrorMessage, setIsLoading]);
+  }, [getErrorMessage, fetchAndSetUser]);
 
   // Signup function
   const signUp = React.useCallback(async (email: string, password: string, name: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
