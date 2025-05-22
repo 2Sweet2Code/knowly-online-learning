@@ -386,36 +386,33 @@ setUser({
     try {
       setIsLoading(true);
       
-      // First, check if user already exists
-      const { data: existingUser, error: checkError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
+      // Sign up the user with Supabase Auth
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name,
+            role,
+            full_name: name,
+            avatar_url: ''
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
       
-      if (existingUser) {
-        throw new Error('A user with this email already exists');
+      if (signUpError) throw signUpError;
+      if (!signUpData.user) throw new Error('Failed to create user');
+      
+      // Create user profile in the database
+      const profile = await createUserProfile(signUpData.user.id, name, role);
+      
+      if (!profile) {
+        throw new Error('Failed to create user profile');
       }
       
-      // Create user in the database
-      const { data: newUser, error: createError } = await supabase
-        .from('users')
-        .insert([
-          { 
-            name, 
-            email, 
-            password: password, // In a real app, you should hash this password
-            role 
-          },
-        ])
-        .select()
-        .single();
-      
-      if (createError) throw createError;
-      if (!newUser) throw new Error('Failed to create user');
-      
-      // Create a session for the new user
-      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+      // Sign in the user after successful registration
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -424,16 +421,29 @@ setUser({
       
       // Set the user in the auth context
       setUser({
-        id: newUser.id.toString(),
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role as 'student' | 'instructor' | 'admin',
+        id: signUpData.user.id,
+        name: name,
+        email: email,
+        role: role,
         user_metadata: {
-          name: newUser.name,
-          role: newUser.role,
-          full_name: newUser.name,
+          name: name,
+          role: role,
+          full_name: name,
           avatar_url: ''
         }
+      });
+      
+      // Update the user's email in the profile
+      await supabase
+        .from('profiles')
+        .update({ email: email })
+        .eq('id', signUpData.user.id);
+      
+      // Show success message
+      toast({
+        title: 'Sukses!',
+        description: 'Llogaria juaj u krijua me sukses',
+        variant: 'default',
       });
       
     } catch (error) {
@@ -476,7 +486,14 @@ setUser({
   // Alias for backward compatibility
   const login = React.useCallback(signIn, [signIn]);
   const logout = React.useCallback(signOut, [signOut]);
-  const signup = React.useCallback(signUp, [signUp]);
+  const signup = React.useCallback(async (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin' = 'student') => {
+    try {
+      await signUp(email, password, name, role);
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    }
+  }, [signUp]);
 
   // Only render children when auth is initialized to prevent race conditions
   const contextValue = React.useMemo<AuthContextType>(() => ({
