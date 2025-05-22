@@ -277,6 +277,11 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
           } catch (err) {
             console.error('Error checking user role:', err);
           }
+        } else {
+          // For unauthenticated users, ensure they see the preview
+          setIsEnrolled(false);
+          setIsInstructor(false);
+          setIsAdmin(false);
         }
         
         return course;
@@ -286,7 +291,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
         return null;
       }
     },
-    enabled: !!courseId && !!user?.id,
+    enabled: !!courseId,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false
   });
