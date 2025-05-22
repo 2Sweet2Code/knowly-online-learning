@@ -10,74 +10,29 @@ import { User } from '@/types';
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
-    const timestamp = new Date().toISOString();
-    const profileToInsert = {
-      id: userId,
-      name,
-      role,
-      created_at: timestamp,
-      updated_at: timestamp
-    };
+    const { data: profileData, error: rpcError } = await supabase
+      .rpc('create_user_profile', {
+        p_user_id: userId,
+        p_name: name,
+        p_role: role
+      });
 
-    // Try to insert the new profile
-    const { error: insertError } = await supabase
-      .from('profiles')
-      .insert(profileToInsert); // Removed .select().single()
-
-    if (!insertError) {
-      // Insert was successful, return the data we used for insert.
-      // The User type might include an email, but profiles table doesn't store it directly.
-      // The email is added separately in the AuthProvider's setUser call.
-      return {
-        id: profileToInsert.id,
-        name: profileToInsert.name,
-        role: profileToInsert.role,
-      } as User;
+    if (rpcError) {
+      console.error('Error creating user profile via RPC:', rpcError);
+      return null;
     }
 
-    // If insert failed, check if it's because the profile already exists (unique violation)
-    if (insertError?.code === '23505') {
-      // Profile likely already exists, try to fetch and update it
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('id, name, role') // Select only necessary fields
-        .eq('id', userId)
-        .single(); // This select might still fail if SELECT RLS is broadly problematic
-
-      if (fetchError) {
-        console.error('Error fetching existing profile after unique violation:', fetchError);
-        return null; // If fetching fails, cannot proceed with update
-      }
-        
-      if (existingProfile) {
-        // Profile fetched, now update it
-        const { data: updatedProfileData, error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            name, // Update name and role if they might have changed
-            role,
-            updated_at: timestamp
-          })
-          .eq('id', userId)
-          .select('id, name, role') // Select necessary fields
-          .single(); // This select might also fail
-
-        if (updateError) {
-          console.error('Error updating existing profile:', updateError);
-          return null;
-        }
-        return updatedProfileData as User;
-      } else {
-        // This case (unique violation but no existing profile found without fetchError) is unlikely
-        console.error('Profile unique violation occurred, but existing profile could not be fetched.');
-        return null;
-      }
+    if (!profileData || !profileData[0]) {
+      console.error('No profile data returned from RPC');
+      return null;
     }
-    
-    // If we get here, the insert failed for some other reason (not unique violation)
-    console.error('Error inserting profile (not unique violation):', insertError);
-    return null;
-    
+
+    return {
+      id: profileData[0].id,
+      name: profileData[0].name,
+      role: profileData[0].role
+    } as User;
+
   } catch (error) {
     console.error('Unexpected error in createUserProfile:', error);
     return null;
