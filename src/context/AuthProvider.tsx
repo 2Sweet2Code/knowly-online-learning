@@ -30,41 +30,46 @@ const createUserProfile = async (userId: string, name: string, role: 'student' |
       return newProfile as User;
     }
 
-    // If we're here, the profile might already exist, so try to update it
-    const { data: updatedProfile, error: updateError } = await supabase
-      .from('profiles')
-      .update({
-        name,
-        role,
-        updated_at: timestamp
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error('Error updating profile:', updateError);
-      
-      // If it's a duplicate key error, try to fetch the existing profile
-      if (updateError.code === '23505') {
-        const { data: existingProfile } = await supabase
+    // If insert failed, check if it's because the profile already exists
+    if (insertError?.code === '23505') { // Unique violation
+      // Try to fetch the existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+        
+      if (existingProfile) {
+        // Update the existing profile
+        const { data: updatedProfile, error: updateError } = await supabase
           .from('profiles')
-          .select('*')
+          .update({
+            name,
+            role,
+            updated_at: timestamp
+          })
           .eq('id', userId)
+          .select()
           .single();
           
-        if (existingProfile) {
-          return existingProfile as User;
+        if (updateError) {
+          console.error('Error updating existing profile:', updateError);
+          return null;
         }
+        
+        return updatedProfile as User;
+      } else {
+        console.error('Profile exists but could not be fetched:', fetchError);
+        return null;
       }
-      
-      return null;
     }
     
-    return updatedProfile as User;
+    // If we get here, the insert failed for some other reason
+    console.error('Error inserting profile:', insertError);
+    return null;
     
   } catch (error) {
-    console.error('Error in createUserProfile:', error);
+    console.error('Unexpected error in createUserProfile:', error);
     return null;
   }
 };
