@@ -1,19 +1,74 @@
-announcements
+announcement_comments
+
+Disable RLS
+
+Create policy
 
 INSERT
 
 
-Combined instructor and admin insert
+Enable insert for authenticated users
 Applied to: authenticated role
 
 SELECT
 
 
-Combined view access policy
+Enable read access for authenticated users
 Applied to: authenticated role
+
+DELETE
+
+
+Users can delete their own comments
+Applied to: authenticated role
+
+UPDATE
+
+
+Users can update their own comments
+Applied to: authenticated role
+
+assignment_submissions
+
+Disable RLS
+
+Create policy
+
+UPDATE
+
+
+Instructors can update submissions for their courses
+Applied to: public role
+
+SELECT
+
+
+Instructors can view all submissions for their courses
+Applied to: public role
+
+INSERT
+
+
+Students can insert their own submissions
+Applied to: public role
+
+SELECT
+
+
+Students can view their own submissions
+Applied to: public role
 
 assignments
 
+Disable RLS
+
+Create policy
+
+ALL
+
+
+Admins can manage all assignments
+Applied to: public role
 
 SELECT
 
@@ -21,7 +76,35 @@ SELECT
 Combined assignments view policy
 Applied to: authenticated role
 
+INSERT
+
+
+Instructors can insert assignments for their courses
+Applied to: public role
+
+UPDATE
+
+
+Instructors can update their own assignments
+Applied to: public role
+
+SELECT
+
+
+Instructors can view all assignments for their courses
+Applied to: public role
+
+SELECT
+
+
+Students can view assignments for their enrolled courses
+Applied to: public role
+
 course_admins
+
+Disable RLS
+
+Create policy
 
 DELETE
 
@@ -49,9 +132,29 @@ Create policy
 
 Warning:
 Row Level Security is disabled. Your table is publicly readable and writable.
-No policies created yet
+INSERT
+
+
+Enable insert for authenticated users
+Applied to: authenticated role
+
+SELECT
+
+
+Enable read access for all users
+Applied to: public role
+
+ALL
+
+
+Enable update/delete for instructors and admins
+Applied to: public role
 
 course_comments
+
+Disable RLS
+
+Create policy
 
 INSERT
 
@@ -79,6 +182,16 @@ Applied to: public role
 
 course_content
 
+Disable RLS
+
+Create policy
+
+ALL
+
+
+Admins can manage all content
+Applied to: public role
+
 INSERT
 
 
@@ -91,7 +204,41 @@ SELECT
 Enable read access for course members
 Applied to: authenticated role
 
+DELETE
+
+
+Instructors can delete their own content
+Applied to: public role
+
+INSERT
+
+
+Instructors can insert content for their courses
+Applied to: public role
+
+UPDATE
+
+
+Instructors can update their own content
+Applied to: public role
+
+SELECT
+
+
+Instructors can view all content for their courses
+Applied to: public role
+
+SELECT
+
+
+Students can view published content for their enrolled courses
+Applied to: public role
+
 courses
+
+Disable RLS
+
+Create policy
 
 DELETE
 
@@ -117,13 +264,47 @@ SELECT
 Combined courses view policy
 Applied to: authenticated role
 
+SELECT
+
+
+Enable read access for all users
+Applied to: public role
+
+UPDATE
+
+
+Instructors can update their courses
+Applied to: public role
+
 enrollments
+
+Disable RLS
+
+Create policy
 
 SELECT
 
 
 Combined enrollments view policy
 Applied to: authenticated role
+
+ALL
+
+
+Course admins can manage enrollments
+Applied to: public role
+
+DELETE
+
+
+Users can delete their own enrollments
+Applied to: public role
+
+INSERT
+
+
+Users can enroll themselves
+Applied to: public role
 
 INSERT
 
@@ -137,7 +318,17 @@ UPDATE
 Users can update their own enrollments
 Applied to: public role
 
+SELECT
+
+
+Users can view their own enrollments
+Applied to: public role
+
 profiles
+
+Disable RLS
+
+Create policy
 
 INSERT
 
@@ -157,35 +348,17 @@ UPDATE
 Allow individual user update access
 Applied to: authenticated role
 
-questions
-
-
-UPDATE
-
-
-Allow instructor or admin to update course questions
-Applied to: public role
-
 SELECT
 
 
-Allow instructor or admin to view course questions
-Applied to: public role
-
-INSERT
-
-
-Allow students to insert questions for enrolled courses
-Applied to: public role
-
-SELECT
-
-
-Allow students to view their own questions
+Enable read access for all users
 Applied to: public role
 
 student_grades
 
+Disable RLS
+
+Create policy
 
 ALL
 
