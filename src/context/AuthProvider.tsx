@@ -10,50 +10,49 @@ import { User } from '@/types';
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
-    const { data: existingProfile, error: fetchError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      throw fetchError;
-    }
-
+    const timestamp = new Date().toISOString();
     const profileData = {
       id: userId,
       name,
       role,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      created_at: timestamp,
+      updated_at: timestamp
     };
 
-    if (existingProfile) {
-      // Update existing profile
-      const { data: updatedProfile, error: updateError } = await supabase
-        .from('profiles')
-        .update({
-          name,
-          role,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId)
-        .select()
-        .single();
+    // First, try to insert the new profile
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert(profileData)
+      .select()
+      .single();
 
-      if (updateError) throw updateError;
-      return updatedProfile as User;
-    } else {
-      // Create new profile
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert(profileData)
-        .select()
-        .single();
+    // If the error is not a duplicate key error, throw it
+    if (createError && !createError.code?.includes('23505')) {
+      throw createError;
+    }
 
-      if (createError) throw createError;
+    // If we have a new profile, return it
+    if (newProfile) {
       return newProfile as User;
     }
+
+    // If we're here, the profile might already exist, so try to update it
+    const { data: updatedProfile, error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        name,
+        role,
+        updated_at: timestamp
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    
+    // If we got here, the update was successful
+    return updatedProfile as User;
+    
   } catch (error) {
     console.error('Error creating/updating profile:', error);
     return null;
@@ -371,12 +370,17 @@ setUser({
     try {
       setIsLoading(true);
       
-      // First, check if a user with this email already exists
+      // Validate input
+      if (!email || !password || !name) {
+        throw new Error('Please fill in all required fields');
+      }
+      
+      // Check if a user with this name already exists
       const { data: existingUser, error: checkError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('name')
         .eq('name', name)
-        .single();
+        .maybeSingle();
       
       if (existingUser) {
         throw new Error('A user with this name already exists');
@@ -395,23 +399,23 @@ setUser({
         }
       });
       
-      if (signUpError) throw signUpError;
-      if (!signUpData.user) throw new Error('Failed to create user');
+      if (signUpError) {
+        console.error('Auth signup error:', signUpError);
+        throw new Error(signUpError.message || 'Failed to create user account');
+      }
+      
+      if (!signUpData.user) {
+        throw new Error('Failed to create user account');
+      }
       
       // Create user profile in the database
       const profile = await createUserProfile(signUpData.user.id, name, role);
       
       if (!profile) {
-        throw new Error('Failed to create user profile');
+        // If profile creation fails, try to delete the auth user to keep things clean
+        await supabase.auth.admin.deleteUser(signUpData.user.id).catch(console.error);
+        throw new Error('Failed to create user profile. Please try again.');
       }
-      
-      // Sign in the user after successful registration
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      
-      if (signInError) throw signInError;
       
       // Set the user in the auth context
       setUser({
@@ -424,9 +428,14 @@ setUser({
       // Show success message
       toast({
         title: 'Sukses!',
-        description: 'Llogaria juaj u krijua me sukses',
+        description: 'Llogaria juaj u krijua me sukses. Ju lutem kontrolloni email-in tuaj për të konfirmuar llogarinë.',
         variant: 'default',
       });
+      
+      // Automatically sign in the user if email confirmation is not required
+      if (signUpData.session) {
+        setSession(signUpData.session);
+      }
       
     } catch (error) {
       console.error('Signup error:', error);
@@ -439,7 +448,7 @@ setUser({
     } finally {
       setIsLoading(false);
     }
-  }, [formatErrorMessage, setIsLoading, setUser]);
+  }, [formatErrorMessage, setIsLoading, setUser, setSession]);
 
   // Logout function
   const signOut = React.useCallback(async () => {
