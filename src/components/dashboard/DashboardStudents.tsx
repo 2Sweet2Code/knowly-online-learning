@@ -91,52 +91,89 @@ export function DashboardStudents() {
       if (!user?.id) return [];
 
       try {
-        // 1. Fetch instructor's courses with left join to enrollments
-        const { data, error: coursesError } = await supabaseClient
+        // 1. Fetch instructor's courses
+        const { data: courses, error: coursesError } = await supabaseClient
           .from('courses')
-          .select(`
-            id,
-            title,
-            instructor_id,
-            enrollments!enrollments_course_id_fkey (
-              id,
-              user_id,
-              created_at,
-              profiles!enrollments_user_id_fkey (
-                id,
-                name,
-                email,
-                avatar_url
-              )
-            )
-          `)
+          .select('id, title, instructor_id')
           .eq('instructor_id', user.id);
 
         if (coursesError) {
           console.error("Error fetching instructor courses:", coursesError);
           throw new Error("Failed to fetch instructor's courses.");
         }
-        if (!data || data.length === 0) {
+        if (!courses || courses.length === 0) {
           return []; // Instructor has no courses
         }
 
-        // 2. Transform data to flatten the structure
+        // 2. Get all enrollments for these courses, excluding instructors
+        const courseIds = courses.map(c => c.id);
+        const { data: enrollments, error: enrollmentsError } = await supabaseClient
+          .from('enrollments')
+          .select(`
+            id,
+            user_id,
+            course_id,
+            created_at,
+            is_instructor,
+            profiles (
+              id,
+              name,
+              email,
+              avatar_url
+            )
+          `)
+          .in('course_id', courseIds)
+          .eq('is_instructor', false);
+
+        if (enrollmentsError) {
+          console.error("Error fetching enrollments:", enrollmentsError);
+          throw new Error("Failed to fetch course enrollments.");
+        }
+
+        // 3. Transform data to match the expected structure
         const result: InstructorStudentData[] = [];
+        const courseMap = new Map(courses.map(c => [c.id, c]));
         
-        for (const course of data) {
-          const courseId = course.id;
-          const courseTitle = course.title;
+        // Define a type for the enrollment with profile
+        type EnrollmentWithProfiles = {
+          id: string;
+          user_id: string;
+          course_id: string;
+          created_at: string;
+          is_instructor: boolean;
+          profiles: {
+            id: string;
+            name: string | null;
+            email: string | null;
+            avatar_url: string | null;
+          }[];
+        };
+
+        // Group enrollments by course
+        const enrollmentsByCourse = new Map<string, EnrollmentWithProfiles[]>();
+        if (enrollments) {
+          (enrollments as unknown as EnrollmentWithProfiles[]).forEach((enrollment) => {
+            if (!enrollmentsByCourse.has(enrollment.course_id)) {
+              enrollmentsByCourse.set(enrollment.course_id, []);
+            }
+            enrollmentsByCourse.get(enrollment.course_id)?.push(enrollment);
+          });
+        }
+        
+        // Process each course
+        for (const course of courses) {
+          const courseEnrollments = enrollmentsByCourse.get(course.id) || [];
           
-          // If there are no enrollments, add the course with null student data
-          if (!course.enrollments || course.enrollments.length === 0) {
+          if (courseEnrollments.length === 0) {
+            // Add course with no students
             result.push({
-              id: courseId,
+              id: course.id,
               student_id: '',
               student_name: null,
               student_email: null,
               student_avatar: null,
-              course_id: courseId,
-              course_title: courseTitle,
+              course_id: course.id,
+              course_title: course.title,
               enrollment_id: '',
               enrolled_at: null,
               grade: null,
@@ -147,24 +184,24 @@ export function DashboardStudents() {
             continue;
           }
           
-          // Process each enrollment
-          for (const enrollment of course.enrollments) {
-            const profiles = Array.isArray(enrollment.profiles) ? enrollment.profiles : [enrollment.profiles];
-            if (!profiles || profiles.length === 0) continue;
-            
+          // Process each enrollment for this course
+          for (const enrollment of courseEnrollments) {
+            // Handle both array and single object responses from Supabase
+            const profiles = Array.isArray(enrollment.profiles) 
+              ? enrollment.profiles 
+              : enrollment.profiles ? [enrollment.profiles] : [];
+              
             const profile = profiles[0];
-            
-            // Skip if this is the instructor
-            if (profile.id === course.instructor_id) continue;
+            if (!profile) continue;
             
             // Get grade if it exists - using user_id and course_id as per the schema
             let gradeInfo: StudentGrade | null = null;
-            if (enrollment.user_id && courseId) {
+            if (enrollment.user_id && course.id) {
               const { data: gradeData } = await supabaseClient
                 .from('student_grades')
                 .select('*')
                 .eq('user_id', enrollment.user_id)
-                .eq('course_id', courseId)
+                .eq('course_id', course.id)
                 .maybeSingle();
               
               if (gradeData) {
@@ -175,7 +212,7 @@ export function DashboardStudents() {
                 gradeInfo = {
                   id: dbGrade.id || '',
                   user_id: dbGrade.user_id || enrollment.user_id,
-                  course_id: dbGrade.course_id || courseId || '',
+                  course_id: dbGrade.course_id || course.id || '',
                   enrollment_id: enrollment.id, // Use the enrollment id from the enrollment object
                   grade: dbGrade.grade ?? null,
                   feedback: dbGrade.feedback ?? null,
@@ -190,11 +227,11 @@ export function DashboardStudents() {
             result.push({
               id: enrollment.id,
               student_id: profile.id,  // Use profile ID instead of enrollment.user_id
-              student_name: profile?.name || 'Student pa emër',
-              student_email: profile?.email || null,
-              student_avatar: profile?.avatar_url || null,
-              course_id: courseId,
-              course_title: courseTitle,
+              student_name: profile.name || 'Student pa emër',
+              student_email: profile.email || null,
+              student_avatar: profile.avatar_url || null,
+course_id: course.id,
+              course_title: course.title,
               enrollment_id: enrollment.id,
               enrolled_at: enrollment.created_at,
               grade: gradeInfo?.grade ?? null,
