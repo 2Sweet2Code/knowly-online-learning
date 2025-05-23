@@ -21,49 +21,7 @@ interface ProfileData {
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
   try {
-    // First, try to create the profile using an RPC function that bypasses RLS
-    const { data: rpcResult, error: rpcError } = await supabase
-      .rpc('ensure_user_profile', {
-        p_user_id: userId,
-        p_name: name,
-        p_email: email,
-        p_role: role
-      });
-
-    // If RPC call was successful, return the profile
-    if (rpcResult && !rpcError) {
-      return {
-        id: userId,
-        name: name,
-        email: email,
-        role: role
-      };
-    }
-
-    // If we get a duplicate key error, the profile might already exist
-    if (rpcError?.code === '23505' || rpcError?.message?.includes('already exists')) {
-      // Try to fetch the existing profile
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (existingProfile && !fetchError) {
-        return {
-          id: existingProfile.id,
-          name: existingProfile.name || name,
-          email: existingProfile.email || email,
-          role: (existingProfile.role as 'student' | 'instructor' | 'admin') || role
-        };
-      }
-      console.error('Error fetching existing profile:', fetchError);
-    } else {
-      console.error('Error creating profile via RPC:', rpcError);
-    }
-
-    // If RPC failed, try direct insert as fallback (should work with the new RLS policies)
-    console.log('Falling back to direct profile creation');
+    // First, try to create the profile directly
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
       .insert([
@@ -79,6 +37,7 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
       .select()
       .single();
 
+    // If creation was successful, return the profile
     if (newProfile && !createError) {
       return {
         id: newProfile.id,
@@ -88,8 +47,30 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
       };
     }
 
+    // If we get a duplicate key error, the profile might already exist
+    if (createError?.code === '23505') {
+      // Try to fetch the existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (existingProfile && !fetchError) {
+        return {
+          id: existingProfile.id,
+          name: existingProfile.name || name,
+          email: existingProfile.email || email,
+          role: (existingProfile.role as 'student' | 'instructor' | 'admin') || role
+        };
+      }
+
+      console.error('Error fetching existing profile:', fetchError);
+    } else {
+      console.error('Error creating profile:', createError);
+    }
+
     // If we get here, something went wrong
-    console.error('Final error creating profile:', createError);
     throw new Error('Failed to create or fetch user profile');
     
   } catch (error) {
