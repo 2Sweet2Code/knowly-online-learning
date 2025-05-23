@@ -18,80 +18,64 @@ interface ProfileData {
   error?: string;
 }
 
-// Import the service role client for admin operations
-import { createClient } from '@supabase/supabase-js';
-
-// Create a service role client (only for server-side use)
-const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-
 // Function to create or update user profile in profiles table
-const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
+const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
   try {
-    // For client-side operations, we'll use the regular supabase client
-    // The actual profile creation is now handled by the database trigger
-    // This function will just verify the profile exists and return it
-    
-    // Wait a short time for the trigger to complete
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Now try to fetch the profile
-    const { data: profileData, error: fetchError } = await supabase
+    // First, try to create the profile directly
+    const { data: newProfile, error: createError } = await supabase
       .from('profiles')
-      .select('*')
-      .eq('id', userId)
+      .insert([
+        {
+          id: userId,
+          name: name,
+          email: email,
+          role: role,
+          full_name: name,
+          updated_at: new Date().toISOString()
+        }
+      ])
+      .select()
       .single();
-      
-    if (fetchError || !profileData) {
-      console.error('Failed to fetch user profile after creation:', fetchError);
-      
-      // If we're in development and have the service role key, try to create the profile directly
-      if (process.env.NODE_ENV === 'development' && serviceRoleKey) {
-        console.log('Attempting to create profile using service role...');
-        const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
-          }
-        });
-        
-        const { data: serviceData, error: serviceError } = await serviceClient
-          .from('profiles')
-          .upsert({
-            id: userId,
-            name: name,
-            email: email,
-            role: role,
-            full_name: name,
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-          
-        if (serviceError) throw serviceError;
-        if (!serviceData) throw new Error('Failed to create user profile with service role');
-        
+
+    // If creation was successful, return the profile
+    if (newProfile && !createError) {
+      return {
+        id: newProfile.id,
+        name: newProfile.name || name,
+        email: newProfile.email || email,
+        role: (newProfile.role as 'student' | 'instructor' | 'admin') || role
+      };
+    }
+
+    // If we get a duplicate key error, the profile might already exist
+    if (createError?.code === '23505') {
+      // Try to fetch the existing profile
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (existingProfile && !fetchError) {
         return {
-          id: serviceData.id,
-          name: serviceData.name || name,
-          email: serviceData.email || email,
-          role: (serviceData.role as 'student' | 'instructor' | 'admin') || role
+          id: existingProfile.id,
+          name: existingProfile.name || name,
+          email: existingProfile.email || email,
+          role: (existingProfile.role as 'student' | 'instructor' | 'admin') || role
         };
       }
-      
-      throw new Error('Failed to create user profile. Please try again.');
+
+      console.error('Error fetching existing profile:', fetchError);
+    } else {
+      console.error('Error creating profile:', createError);
     }
+
+    // If we get here, something went wrong
+    throw new Error('Failed to create or fetch user profile');
     
-    // If we get here, the profile exists
-    return {
-      id: profileData.id,
-      name: profileData.name || name,
-      email: profileData.email || email,
-      role: (profileData.role as 'student' | 'instructor' | 'admin') || role
-    };
   } catch (error) {
     console.error('Error in createUserProfile:', error);
-    throw new Error('Failed to create user profile. Please try again.');
+    throw new Error('Failed to create user profile. Please try again later.');
   }
 };
 
