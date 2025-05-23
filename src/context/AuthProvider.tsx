@@ -7,70 +7,81 @@ import { AuthContext, type AuthContextType } from './auth-context';
 // Import User type from the shared types
 import { User } from '@/types';
 
+// Interface for the profile data returned by the RPC call
+interface ProfileData {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  created_at?: string;
+  updated_at?: string;
+  error?: string;
+}
+
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin'): Promise<User | null> => {
   try {
-    // First, wait for the user to be confirmed in the auth.users table
-    const maxRetries = 5;
-    let retries = 0;
-    let userConfirmed = false;
-    
-    while (retries < maxRetries && !userConfirmed) {
-      try {
-        // Try to sign in with the user's ID as a way to verify they exist
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        
-        if (user && user.id === userId && !userError) {
-          userConfirmed = true;
-          break;
-        }
-      } catch (e) {
-        console.log(`Attempt ${retries + 1}: User not yet available, retrying...`);
-      }
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      retries++;
-    }
-    
-    if (!userConfirmed) {
-      console.error('User not confirmed after multiple retries');
-      return null;
-    }
-
-    // Now create the profile using a direct insert instead of RPC
-    const { data: profileData, error: insertError } = await supabase
+    // First, try to insert the profile directly
+    const { data: insertData, error: insertError } = await supabase
       .from('profiles')
       .insert([
         {
           id: userId,
           name: name,
-          role: role
+          email: email,
+          role: role,
+          full_name: name,
+          updated_at: new Date().toISOString()
         }
       ])
       .select()
       .single();
 
+    // If the insert fails with a unique violation, the profile might already exist
     if (insertError) {
-      console.error('Error creating user profile:', insertError);
-      return null;
+      if (insertError.code === '23505') { // Unique violation
+        console.log('Profile already exists, updating instead');
+        // Try to update the existing profile
+        const { data: updateData, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            name: name,
+            email: email,
+            role: role,
+            full_name: name,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId)
+          .select()
+          .single();
+          
+        if (updateError) throw updateError;
+        if (!updateData) throw new Error('Failed to update existing profile');
+        
+        return {
+          id: updateData.id,
+          name: updateData.name || name,
+          email: updateData.email || email,
+          role: (updateData.role as 'student' | 'instructor' | 'admin') || role
+        };
+      }
+      
+      // If it's not a unique violation, rethrow the error
+      throw insertError;
     }
 
-    if (!profileData) {
-      console.error('No profile data returned from insert');
-      return null;
-    }
-
+    // If we get here, the insert was successful
+    if (!insertData) throw new Error('Failed to create user profile');
+    
     return {
-      id: profileData.id,
-      name: profileData.name,
-      email: email,
-      role: profileData.role as 'student' | 'instructor' | 'admin'
+      id: insertData.id,
+      name: insertData.name || name,
+      email: insertData.email || email,
+      role: (insertData.role as 'student' | 'instructor' | 'admin') || role
     };
-
   } catch (error) {
-    console.error('Unexpected error in createUserProfile:', error);
-    return null;
+    console.error('Error in createUserProfile:', error);
+    throw new Error('Failed to create user profile. Please try again.');
   }
 };
 
