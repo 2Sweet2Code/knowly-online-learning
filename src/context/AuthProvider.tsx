@@ -21,6 +21,9 @@ interface ProfileData {
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
   try {
+    // Add a small delay to ensure the user is fully created in auth.users
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     // First, try to create the profile directly
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
@@ -48,7 +51,10 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
     }
 
     // If we get a duplicate key error, the profile might already exist
-    if (createError?.code === '23505') {
+    if (createError?.code === '23505' || createError?.code === '23503') {
+      // Add a small delay before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       // Try to fetch the existing profile
       const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
