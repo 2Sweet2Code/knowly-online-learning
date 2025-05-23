@@ -18,70 +18,46 @@ interface ProfileData {
   error?: string;
 }
 
-// Function to create or update user profile in profiles table
+// Function to update user profile in profiles table
+// Note: The profile is now created automatically by the database trigger
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
   try {
-    // Add a small delay to ensure the user is fully created in auth.users
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Wait a bit to ensure the trigger has created the profile
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // First, try to create the profile directly
-    const { data: newProfile, error: createError } = await supabase
+    // Update the profile with additional data
+    const { data: updatedProfile, error: updateError } = await supabase
       .from('profiles')
-      .insert([
-        {
-          id: userId,
-          name: name,
-          email: email,
-          role: role,
-          full_name: name,
-          updated_at: new Date().toISOString()
-        }
-      ])
+      .update({
+        name: name,
+        email: email,
+        role: role,
+        full_name: name,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
       .select()
       .single();
 
-    // If creation was successful, return the profile
-    if (newProfile && !createError) {
-      return {
-        id: newProfile.id,
-        name: newProfile.name || name,
-        email: newProfile.email || email,
-        role: (newProfile.role as 'student' | 'instructor' | 'admin') || role
-      };
+    if (updateError) {
+      console.error('Error updating profile:', updateError);
+      throw new Error('Failed to update user profile');
     }
-
-    // If we get a duplicate key error, the profile might already exist
-    if (createError?.code === '23505' || createError?.code === '23503') {
-      // Add a small delay before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Try to fetch the existing profile
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (existingProfile && !fetchError) {
-        return {
-          id: existingProfile.id,
-          name: existingProfile.name || name,
-          email: existingProfile.email || email,
-          role: (existingProfile.role as 'student' | 'instructor' | 'admin') || role
-        };
-      }
-
-      console.error('Error fetching existing profile:', fetchError);
-    } else {
-      console.error('Error creating profile:', createError);
+    
+    if (!updatedProfile) {
+      throw new Error('Profile not found after creation');
     }
-
-    // If we get here, something went wrong
-    throw new Error('Failed to create or fetch user profile');
+    
+    return {
+      id: updatedProfile.id,
+      name: updatedProfile.name || name,
+      email: updatedProfile.email || email,
+      role: (updatedProfile.role as 'student' | 'instructor' | 'admin') || role
+    };
     
   } catch (error) {
     console.error('Error in createUserProfile:', error);
-    throw new Error('Failed to create user profile. Please try again later.');
+    throw new Error('Failed to update user profile. Please try again later.');
   }
 };
 
@@ -402,7 +378,7 @@ setUser({
       }
       
       // Check if a user with this name already exists
-      const { data: existingUser, error: checkError } = await supabase
+      const { data: existingUser } = await supabase
         .from('profiles')
         .select('name')
         .eq('name', name)
@@ -419,6 +395,7 @@ setUser({
         options: {
           data: {
             name,
+            full_name: name,
             role
           },
           emailRedirectTo: `${window.location.origin}/auth/callback`
@@ -434,13 +411,27 @@ setUser({
         throw new Error('Failed to create user account');
       }
       
-      // Create user profile in the database
-      const profile = await createUserProfile(signUpData.user.id, name, email, role);
+      // Wait for the trigger to create the profile
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      if (!profile) {
-        // If profile creation fails, try to delete the auth user to keep things clean
-        await supabase.auth.admin.deleteUser(signUpData.user.id).catch(console.error);
-        throw new Error('Failed to create user profile. Please try again.');
+      // Update the profile with additional data
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          name: name,
+          email: email,
+          role: role,
+          full_name: name,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', signUpData.user.id)
+        .select()
+        .single();
+      
+      if (profileError || !profile) {
+        console.error('Profile update error:', profileError);
+        // Don't delete the user if profile update fails - the trigger might have created it
+        throw new Error('Failed to update user profile. Your account was created, but some profile information might be missing.');
       }
       
       // Set the user in the auth context
