@@ -299,31 +299,46 @@ setUser({
       
       if (session?.user) {
         try {
-          // The database trigger should have created the profile by now
-          // Just fetch the user data
+          // First, try to fetch the user profile
           await fetchAndSetUser(session.user.id);
           
-          // If we still don't have user data after a short delay, show an error
-          setTimeout(async () => {
-            const { data: currentUser } = await supabase.auth.getUser();
-            if (currentUser?.user && isMounted) {
+          // Set a timeout to check if the profile was created by the trigger
+          // This handles cases where the auth state changes before the trigger runs
+          const checkProfile = async () => {
+            if (!isMounted) return;
+            
+            try {
               const { data: profile } = await supabase
                 .from('profiles')
-                .select('id')
+                .select('*')
                 .eq('id', session.user.id)
-                .maybeSingle();
+                .single();
                 
-              if (!profile) {
-                console.error('Profile not found after signup. Check the database trigger.');
+              if (profile) {
+                console.log('Profile found after retry:', profile);
+                // Update the user state with the new profile
+                await fetchAndSetUser(session.user.id);
+              } else {
+                console.warn('Profile not found after signup. Will retry in 1s...');
+                // Retry after a delay if profile is still not found
+                setTimeout(checkProfile, 1000);
               }
+            } catch (error) {
+              console.error('Error checking profile:', error);
+              // If there's an error, it might be because the profile doesn't exist yet
+              setTimeout(checkProfile, 1000);
             }
-          }, 3000); // Check after 3 seconds
+          };
+          
+          // Start checking for the profile
+          setTimeout(checkProfile, 500);
           
         } catch (error) {
-          console.error('Error in auth state change handler:', error);
+          console.error('Error in auth state change:', error);
           setUser(null);
         }
       } else {
+        // User signed out
         setUser(null);
       }
       
@@ -467,8 +482,7 @@ setUser({
       }
       
       // Sign up the user with Supabase Auth
-      // The database trigger will handle creating the profile
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -480,24 +494,18 @@ setUser({
           emailRedirectTo: `${window.location.origin}/dashboard`
         }
       });
-      
-      if (signUpError) {
-        console.error('Auth signup error:', signUpError);
-        throw new Error(signUpError.message || 'Failed to create user account');
+
+      if (error) {
+        console.error('Signup error:', error);
+        throw new Error(error.message || 'Failed to sign up');
       }
-      
-      if (!signUpData.user) {
-        throw new Error('Failed to create user account');
-      }
-      
+
       // Show success message
       toast({
         title: 'Success!',
         description: 'Please check your email to confirm your account. You will be redirected after confirmation.',
         variant: 'default',
       });
-      
-      // The database trigger will create the profile automatically
       
     } catch (error) {
       console.error('Signup error:', error);
