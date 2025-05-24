@@ -299,47 +299,28 @@ setUser({
       
       if (session?.user) {
         try {
+          // The database trigger should have created the profile by now
+          // Just fetch the user data
           await fetchAndSetUser(session.user.id);
           
-          // After successful auth, ensure profile exists
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', session.user.id)
-            .maybeSingle();
-            
-          if (!profile && !profileError) {
-            // No profile exists, create one
-            const name = session.user.user_metadata?.name || 
-                        session.user.email?.split('@')[0] || 
-                        'User';
-            const email = session.user.email || '';
-            const role = session.user.user_metadata?.role || 'student';
-            
-            console.log('Creating profile for user:', { id: session.user.id, name, email, role });
-            
-            await createUserProfile(session.user.id, name, email, role);
-            
-            // Refresh user data
-            await fetchAndSetUser(session.user.id);
-          }
+          // If we still don't have user data after a short delay, show an error
+          setTimeout(async () => {
+            const { data: currentUser } = await supabase.auth.getUser();
+            if (currentUser?.user && isMounted) {
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('id', session.user.id)
+                .maybeSingle();
+                
+              if (!profile) {
+                console.error('Profile not found after signup. Check the database trigger.');
+              }
+            }
+          }, 3000); // Check after 3 seconds
           
         } catch (error) {
           console.error('Error in auth state change handler:', error);
-          
-          // If it's a foreign key violation, retry after a delay
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          if (errorMessage.includes('foreign key constraint') && retryCount < maxRetries) {
-            retryCount++;
-            const delay = 1000 * Math.pow(2, retryCount - 1); // Exponential backoff
-            console.log(`Retrying profile creation in ${delay}ms (${retryCount}/${maxRetries})...`);
-            
-            retryTimeout = setTimeout(() => {
-              handleAuthChange(event, session);
-            }, delay);
-            return;
-          }
-          
           setUser(null);
         }
       } else {
@@ -485,43 +466,8 @@ setUser({
         throw new Error('Please fill in all required fields');
       }
       
-      // Check if user exists in auth.users using the admin API
-      const { data: { users }, error: authUsersError } = await supabase.auth.admin.listUsers();
-      const userExists = users?.some((user: { email?: string | null }) => user.email === email);
-      
-      if (userExists) {
-        // User exists in auth.users, check if they have a profile
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id, email_confirmed_at')
-          .eq('email', email)
-          .maybeSingle();
-          
-        if (existingProfile) {
-          // Resend confirmation email if email is not confirmed
-          const { error: signInError } = await supabase.auth.resend({
-            type: 'signup',
-            email,
-            options: {
-              emailRedirectTo: `${window.location.origin}/dashboard`
-            }
-          });
-
-          if (signInError) {
-            console.error('Error resending confirmation email:', signInError);
-            throw new Error('Failed to resend confirmation email. Please try again.');
-          }
-
-          toast({
-            title: 'Verification Email Sent',
-            description: 'A verification email has been sent to your email address. Please check your inbox and confirm your email before logging in.',
-            variant: 'default',
-          });
-          return;
-        }
-      }
-      
       // Sign up the user with Supabase Auth
+      // The database trigger will handle creating the profile
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
@@ -531,8 +477,7 @@ setUser({
             full_name: name,
             role
           },
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-          // Don't create the profile here, let the email confirmation handle it
+          emailRedirectTo: `${window.location.origin}/dashboard`
         }
       });
       
@@ -545,18 +490,14 @@ setUser({
         throw new Error('Failed to create user account');
       }
       
-      // Don't create the profile here - instead, rely on the email confirmation flow
-      // which will trigger the auth state change and create the profile
-      
       // Show success message
       toast({
         title: 'Success!',
-        description: 'Please check your email to confirm your account before signing in.',
+        description: 'Please check your email to confirm your account. You will be redirected after confirmation.',
         variant: 'default',
       });
       
-      // The profile will be created after email confirmation
-      // via the auth state change listener
+      // The database trigger will create the profile automatically
       
     } catch (error) {
       console.error('Signup error:', error);
