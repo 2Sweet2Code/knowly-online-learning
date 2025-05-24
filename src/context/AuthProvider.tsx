@@ -20,104 +20,68 @@ interface ProfileData {
 
 // Function to create or update user profile in profiles table with retry logic
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
-  const maxRetries = 3;
+  const maxRetries = 5; // Increased from 3 to 5
   let retryCount = 0;
-  const retryDelay = 1000; // 1 second delay between retries
+  const baseDelay = 1000; // Start with 1 second delay
 
-  while (retryCount < maxRetries) {
+  const attemptCreateProfile = async (): Promise<User> => {
+    const now = new Date().toISOString();
+    
+    // Prepare the base profile data
+    const baseProfileData = {
+      id: userId,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      role: role,
+      full_name: name.trim(),
+      updated_at: now,
+      created_at: now
+    };
+
     try {
-      const now = new Date().toISOString();
-      
-      // Prepare the base profile data
-      const baseProfileData = {
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        role: role,
-        full_name: name.trim(),
-        updated_at: now
-      };
-
-      // First, try to get the existing profile with only the columns we need
-      const { data: existingProfile, error: fetchError } = await supabase
+      // First, try to get the existing profile
+      const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id')
         .eq('id', userId)
         .maybeSingle();
 
-      if (fetchError) {
-        console.error('Error fetching profile:', fetchError);
-        throw fetchError;
-      }
-
-      let profileData;
-
+      let result;
+      
       if (!existingProfile) {
-        // If profile doesn't exist, create it with only the essential fields
-        const { data: newProfile, error: createError } = await supabase
+        // If profile doesn't exist, try to insert it
+        const { data, error } = await supabase
           .from('profiles')
-          .upsert({
-            id: userId,
-            ...baseProfileData,
-            created_at: now
-          }, {
-            onConflict: 'id',
-            ignoreDuplicates: false
-          })
+          .insert(baseProfileData)
           .select()
           .single();
-
-        if (createError) {
-          // If it's a foreign key violation, the user might not exist in auth.users yet
-          if (createError.code === '23503') {
-            retryCount++;
-            if (retryCount < maxRetries) {
-              console.log(`Retrying profile creation (${retryCount}/${maxRetries})...`);
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-              continue;
-            }
-          }
-          console.error('Error creating profile:', createError);
-          throw new Error(createError.message || 'Failed to create user profile');
-        }
-        
-        if (!newProfile) {
-          throw new Error('No profile data returned after creation');
-        }
-        
-        profileData = newProfile;
+          
+        if (error) throw error;
+        result = data;
       } else {
         // If profile exists, update it
-        const { data: updatedProfile, error: updateError } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .update(baseProfileData)
           .eq('id', userId)
           .select()
           .single();
-
-        if (updateError) {
-          console.error('Error updating profile:', updateError);
-          throw new Error(updateError.message || 'Failed to update user profile');
-        }
-        
-        if (!updatedProfile) {
-          throw new Error('No profile data returned after update');
-        }
-        
-        profileData = updatedProfile;
+          
+        if (error) throw error;
+        result = data;
       }
-      
-      // Get the full profile data after create/update
-      const { data: fullProfile, error: fullProfileError } = await supabase
+
+      // Get the full profile data
+      const { data: fullProfile, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (fullProfileError || !fullProfile) {
-        console.error('Error fetching full profile:', fullProfileError);
-        throw new Error(fullProfileError?.message || 'Failed to fetch user profile after creation');
+      if (fetchError || !fullProfile) {
+        throw new Error(fetchError?.message || 'Failed to fetch profile after creation');
       }
-      
+
       // Return the user object with safe defaults
       return {
         id: fullProfile.id || userId,
@@ -133,19 +97,47 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
       };
       
     } catch (error) {
+      // If it's a foreign key violation or user doesn't exist in auth.users yet
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error 
+        ? String((error as { code: unknown }).code) 
+        : '';
+        
+      if (errorCode === '23503' || errorMessage.includes('violates foreign key constraint')) {
+        throw new Error('USER_NOT_READY');
+      }
+      throw error;
+    }
+  };
+
+  // Retry with exponential backoff
+  while (retryCount < maxRetries) {
+    try {
+      return await attemptCreateProfile();
+    } catch (error) {
       retryCount++;
       
-      if (retryCount >= maxRetries) {
-        console.error('Max retries reached in createUserProfile:', error);
-        throw new Error('Failed to create or update user profile after multiple attempts. Please try again later.');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      if (errorMessage === 'USER_NOT_READY' && retryCount < maxRetries) {
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+        const delay = baseDelay * Math.pow(2, retryCount - 1);
+        console.log(`User not ready, retrying in ${delay}ms (${retryCount}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
       
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      // For any other error or max retries reached
+      console.error('Error in createUserProfile:', error);
+      if (retryCount >= maxRetries) {
+        throw new Error('Failed to create or update user profile after multiple attempts. The user account might not be ready yet. Please try again in a moment.');
+      }
+      throw error;
     }
   }
   
-  throw new Error('Failed to create or update user profile after multiple attempts. Please try again later.');
+  // This should never be reached due to the throw in the loop
+  throw new Error('An unexpected error occurred while creating the user profile.');
 };
 
 interface AuthState {
