@@ -18,91 +18,134 @@ interface ProfileData {
   error?: string;
 }
 
-// Function to create or update user profile in profiles table
+// Function to create or update user profile in profiles table with retry logic
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
-  try {
-    const now = new Date().toISOString();
-    
-    // First, try to get the existing profile with only the columns we need
-    const { data: existingProfile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
+  const maxRetries = 3;
+  let retryCount = 0;
+  const retryDelay = 1000; // 1 second delay between retries
 
-    let profileData;
-    
-    // Prepare the base profile data
-    const baseProfileData = {
-      name: name,
-      email: email,
-      role: role,
-      full_name: name,
-      updated_at: now
-    };
+  while (retryCount < maxRetries) {
+    try {
+      const now = new Date().toISOString();
+      
+      // Prepare the base profile data
+      const baseProfileData = {
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        role: role,
+        full_name: name.trim(),
+        updated_at: now
+      };
 
-    if (!existingProfile) {
-      // If profile doesn't exist, create it with only the essential fields
-      const { data: newProfile, error: createError } = await supabase
+      // First, try to get the existing profile with only the columns we need
+      const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
-        .upsert({
-          id: userId,
-          ...baseProfileData,
-          created_at: now
-        })
-        .select()
-        .single();
-
-      if (createError || !newProfile) {
-        console.error('Error creating profile:', createError);
-        throw new Error('Failed to create user profile');
-      }
-      profileData = newProfile;
-    } else {
-      // If profile exists, update it
-      const { data: updatedProfile, error: updateError } = await supabase
-        .from('profiles')
-        .update(baseProfileData)
+        .select('id')
         .eq('id', userId)
-        .select()
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error fetching profile:', fetchError);
+        throw fetchError;
+      }
+
+      let profileData;
+
+      if (!existingProfile) {
+        // If profile doesn't exist, create it with only the essential fields
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: userId,
+            ...baseProfileData,
+            created_at: now
+          }, {
+            onConflict: 'id',
+            ignoreDuplicates: false
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          // If it's a foreign key violation, the user might not exist in auth.users yet
+          if (createError.code === '23503') {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              console.log(`Retrying profile creation (${retryCount}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+              continue;
+            }
+          }
+          console.error('Error creating profile:', createError);
+          throw new Error(createError.message || 'Failed to create user profile');
+        }
+        
+        if (!newProfile) {
+          throw new Error('No profile data returned after creation');
+        }
+        
+        profileData = newProfile;
+      } else {
+        // If profile exists, update it
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('profiles')
+          .update(baseProfileData)
+          .eq('id', userId)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error('Error updating profile:', updateError);
+          throw new Error(updateError.message || 'Failed to update user profile');
+        }
+        
+        if (!updatedProfile) {
+          throw new Error('No profile data returned after update');
+        }
+        
+        profileData = updatedProfile;
+      }
+      
+      // Get the full profile data after create/update
+      const { data: fullProfile, error: fullProfileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
         .single();
 
-      if (updateError || !updatedProfile) {
-        console.error('Error updating profile:', updateError);
-        throw new Error('Failed to update user profile');
+      if (fullProfileError || !fullProfile) {
+        console.error('Error fetching full profile:', fullProfileError);
+        throw new Error(fullProfileError?.message || 'Failed to fetch user profile after creation');
       }
-      profileData = updatedProfile;
-    }
-    
-    // Get the full profile data after create/update
-    const { data: fullProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (!fullProfile) {
-      throw new Error('Failed to fetch user profile after creation');
-    }
-    
-    // Return the user object with safe defaults
-    return {
-      id: fullProfile.id || userId,
-      name: fullProfile.name || name,
-      email: fullProfile.email || email,
-      role: (fullProfile.role as 'student' | 'instructor' | 'admin') || role,
-      user_metadata: {
+      
+      // Return the user object with safe defaults
+      return {
+        id: fullProfile.id || userId,
         name: fullProfile.name || name,
-        role: fullProfile.role || role,
-        full_name: fullProfile.full_name || fullProfile.name || name,
-        avatar_url: fullProfile.avatar_url || ''
+        email: fullProfile.email || email,
+        role: (fullProfile.role as 'student' | 'instructor' | 'admin') || role,
+        user_metadata: {
+          name: fullProfile.name || name,
+          role: fullProfile.role || role,
+          full_name: fullProfile.full_name || fullProfile.name || name,
+          avatar_url: fullProfile.avatar_url || ''
+        }
+      };
+      
+    } catch (error) {
+      retryCount++;
+      
+      if (retryCount >= maxRetries) {
+        console.error('Max retries reached in createUserProfile:', error);
+        throw new Error('Failed to create or update user profile after multiple attempts. Please try again later.');
       }
-    };
-    
-  } catch (error) {
-    console.error('Error in createUserProfile:', error);
-    throw new Error('Failed to create or update user profile. Please try again later.');
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+    }
   }
+  
+  throw new Error('Failed to create or update user profile after multiple attempts. Please try again later.');
 };
 
 interface AuthState {
