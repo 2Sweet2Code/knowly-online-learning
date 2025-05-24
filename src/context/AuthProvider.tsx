@@ -385,19 +385,20 @@ setUser({
         }
         
         // Update the auth state with the user's profile
-        setState({
+        setState(prev => ({
+          ...prev,
           user: userProfile,
           session: data.session,
           isLoading: false,
           authInitialized: true
-        });
+        }));
       }
     } catch (error) {
       console.error('Login error:', error);
       setState(prev => ({ ...prev, isLoading: false }));
       throw new Error(getErrorMessage(error));
     }
-  }, [getErrorMessage]);
+  }, [getErrorMessage, setState]);
 
   // Signup function
   const signUp = React.useCallback(async (email: string, password: string, name: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
@@ -409,15 +410,34 @@ setUser({
         throw new Error('Please fill in all required fields');
       }
       
-      // Check if a user with this email already exists
+      // Check if user exists but email is not confirmed
       const { data: existingUser } = await supabase
         .from('profiles')
-        .select('email')
+        .select('id, email_confirmed_at')
         .eq('email', email)
         .maybeSingle();
-      
+
+      // If user exists and email is not confirmed, resend confirmation email
       if (existingUser) {
-        throw new Error('A user with this email already exists');
+        const { error: signInError } = await supabase.auth.resend({
+          type: 'signup',
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}/dashboard`
+          }
+        });
+
+        if (signInError) {
+          console.error('Error resending confirmation email:', signInError);
+          throw new Error('Failed to resend confirmation email. Please try again.');
+        }
+
+        toast({
+          title: 'Verification Email Sent',
+          description: 'A verification email has been sent to your email address. Please check your inbox and confirm your email before logging in.',
+          variant: 'default',
+        });
+        return;
       }
       
       // Sign up the user with Supabase Auth
@@ -430,7 +450,7 @@ setUser({
             full_name: name,
             role
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: `${window.location.origin}/dashboard`
         }
       });
       
@@ -443,33 +463,22 @@ setUser({
         throw new Error('Failed to create user account');
       }
       
-      // Create or update the user profile
+      // Create the user profile
       const userProfile = await createUserProfile(signUpData.user.id, name, email, role);
       
       if (!userProfile) {
         throw new Error('Failed to create user profile');
       }
       
-      // Set the user in the auth context
-      setUser({
-        id: userProfile.id,
-        name: userProfile.name,
-        email: userProfile.email,
-        role: userProfile.role,
-        user_metadata: userProfile.user_metadata
-      });
-      
       // Show success message
       toast({
-        title: 'Sukses!',
-        description: 'Llogaria juaj u krijua me sukses. Ju lutem kontrolloni email-in tuaj për të konfirmuar llogarinë.',
+        title: 'Success!',
+        description: 'Please check your email to confirm your account before signing in.',
         variant: 'default',
       });
       
-      // Automatically sign in the user if email confirmation is not required
-      if (signUpData.session) {
-        setSession(signUpData.session);
-      }
+      // Don't sign in automatically - wait for email confirmation
+      // The user will be redirected to the dashboard after confirming their email
       
     } catch (error) {
       console.error('Signup error:', error);
@@ -482,43 +491,70 @@ setUser({
     } finally {
       setIsLoading(false);
     }
-  }, [formatErrorMessage, setIsLoading, setUser, setSession]);
+  }, [formatErrorMessage, setIsLoading]);
 
   // Logout function
   const signOut = React.useCallback(async () => {
     try {
-      setIsLoading(true);
+      setState(prev => ({ ...prev, isLoading: true }));
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
-      setUser(null);
-      setSession(null);
+      setState(prev => ({
+        ...prev,
+        user: null,
+        session: null,
+        isLoading: false
+      }));
       
       // Redirect to home page after successful logout
       window.location.href = '/';
     } catch (error) {
       console.error('Logout failed:', error);
+      setState(prev => ({ ...prev, isLoading: false }));
       toast({
         title: 'Gabim gjatë çkyçjes',
         description: getErrorMessage(error),
         variant: 'destructive',
       });
-    } finally {
-      setIsLoading(false);
     }
-  }, [setUser, setSession, setIsLoading, getErrorMessage]);
+  }, [getErrorMessage, setState]);
 
   // Alias for backward compatibility
-  const login = React.useCallback(signIn, [signIn]);
-  const logout = React.useCallback(signOut, [signOut]);
-  const signup = React.useCallback(async (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin' = 'student') => {
+  const login = React.useCallback((email: string, password: string) => {
+    return signIn(email, password);
+  }, [signIn]);
+
+  const logout = React.useCallback(() => {
+    return signOut();
+  }, [signOut]);
+
+  const signup = React.useCallback(async (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
     try {
+      setState(prev => ({ ...prev, isLoading: true }));
+      
+      // Validate input
+      if (!name || !email || !password) {
+        throw new Error('Please fill in all required fields');
+      }
+      
+      // Call the signUp function which handles the actual signup process
       await signUp(email, password, name, role);
+      
+      // Show success message (handled in signUp function)
+      
     } catch (error) {
       console.error('Signup error:', error);
+      toast({
+        title: 'Signup Failed',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
       throw error;
+    } finally {
+      setState(prev => ({ ...prev, isLoading: false }));
     }
-  }, [signUp]);
+  }, [signUp, getErrorMessage, setState]);
 
   // Only render children when auth is initialized to prevent race conditions
   const contextValue = React.useMemo<AuthContextType>(() => ({
