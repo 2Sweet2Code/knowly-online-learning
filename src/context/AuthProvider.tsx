@@ -501,7 +501,28 @@ setUser({
       }
 
       // Debug log to see what was returned
-      console.log('Signup response:', data);
+      console.log('Signup response:', {
+        user: data.user,
+        session: data.session,
+        // Check if email was sent (if user has identities, email was sent)
+        emailSent: !!(data.user?.identities && data.user.identities.length > 0),
+        // Check if email is confirmed
+        emailConfirmed: data.user?.email_confirmed_at !== null,
+        // Check if user is active
+        userActive: data.user?.last_sign_in_at !== null
+      });
+
+      // Log more details if email wasn't sent
+      if (!data.user?.identities || data.user.identities.length === 0) {
+        console.warn('Email may not have been sent. User has no identities.');
+        console.log('Available user data:', {
+          id: data.user?.id,
+          email: data.user?.email,
+          created_at: data.user?.created_at,
+          last_sign_in_at: data.user?.last_sign_in_at,
+          email_confirmed_at: data.user?.email_confirmed_at
+        });
+      }
 
       // Show success message
       toast({
