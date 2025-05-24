@@ -21,31 +21,35 @@ interface ProfileData {
 // Function to create or update user profile in profiles table
 const createUserProfile = async (userId: string, name: string, email: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<User | null> => {
   try {
-    // First, try to get the existing profile
-    const { data: existingProfile, error: fetchError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
     const now = new Date().toISOString();
-    let profileData;
+    
+    // First, try to get the existing profile with only the columns we need
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
 
-    if (fetchError || !existingProfile) {
-      // If profile doesn't exist, create it
+    let profileData;
+    
+    // Prepare the base profile data
+    const baseProfileData = {
+      name: name,
+      email: email,
+      role: role,
+      full_name: name,
+      updated_at: now
+    };
+
+    if (!existingProfile) {
+      // If profile doesn't exist, create it with only the essential fields
       const { data: newProfile, error: createError } = await supabase
         .from('profiles')
-        .insert([
-          {
-            id: userId,
-            name: name,
-            email: email,
-            role: role,
-            full_name: name,
-            created_at: now,
-            updated_at: now
-          }
-        ])
+        .upsert({
+          id: userId,
+          ...baseProfileData,
+          created_at: now
+        })
         .select()
         .single();
 
@@ -58,13 +62,7 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
       // If profile exists, update it
       const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
-        .update({
-          name: name,
-          email: email,
-          role: role,
-          full_name: name,
-          updated_at: now
-        })
+        .update(baseProfileData)
         .eq('id', userId)
         .select()
         .single();
@@ -76,16 +74,28 @@ const createUserProfile = async (userId: string, name: string, email: string, ro
       profileData = updatedProfile;
     }
     
+    // Get the full profile data after create/update
+    const { data: fullProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (!fullProfile) {
+      throw new Error('Failed to fetch user profile after creation');
+    }
+    
+    // Return the user object with safe defaults
     return {
-      id: profileData.id,
-      name: profileData.name || name,
-      email: profileData.email || email,
-      role: (profileData.role as 'student' | 'instructor' | 'admin') || role,
+      id: fullProfile.id || userId,
+      name: fullProfile.name || name,
+      email: fullProfile.email || email,
+      role: (fullProfile.role as 'student' | 'instructor' | 'admin') || role,
       user_metadata: {
-        name: profileData.name,
-        role: profileData.role,
-        full_name: profileData.full_name || profileData.name,
-        avatar_url: profileData.avatar_url
+        name: fullProfile.name || name,
+        role: fullProfile.role || role,
+        full_name: fullProfile.full_name || fullProfile.name || name,
+        avatar_url: fullProfile.avatar_url || ''
       }
     };
     
