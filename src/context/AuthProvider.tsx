@@ -500,12 +500,24 @@ setUser({
         throw new Error(error.message || 'Failed to sign up');
       }
 
+      // Debug log to see what was returned
+      console.log('Signup response:', data);
+
       // Show success message
       toast({
         title: 'Success!',
         description: 'Please check your email to confirm your account. You will be redirected after confirmation.',
         variant: 'default',
       });
+      
+      // Check if email confirmation is required
+      if (data.user?.identities?.length === 0) {
+        toast({
+          title: 'Email already registered',
+          description: 'This email is already registered. Please sign in or reset your password.',
+          variant: 'destructive',
+        });
+      }
       
     } catch (error) {
       console.error('Signup error:', error);
