@@ -138,29 +138,51 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
           .select()
           .single();
 
-        // If no rows were updated, insert a new record
+        // If no rows were updated, insert a new record with explicit status
         if (!updateData) {
-          console.log('No existing record found, inserting new record');
+          console.log('No existing record found, inserting new record with status:', targetStatus);
           const { error: insertError } = await supabase
             .from('course_admins')
             .insert({
               user_id: application.user_id,
               course_id: application.course_id,
-              status: targetStatus,
+              status: targetStatus, // Explicitly set the status
               created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
+              // Add any other required fields with default values if needed
             })
             .select()
             .single();
 
-          if (insertError) throw insertError;
+          if (insertError) {
+            console.error('Error inserting new course_admin:', insertError);
+            throw insertError;
+          }
         } else if (updateError) {
           console.error('Error updating course_admins:', updateError);
           throw updateError;
         }
       } catch (error) {
         console.error('Error in course_admins update/insert:', error);
-        throw error;
+        // If there's a unique constraint violation, try to update the existing record
+        if (error.code === '23505') {
+          console.log('Unique constraint violation, attempting to update existing record');
+          const { error: updateError } = await supabase
+            .from('course_admins')
+            .update({
+              status: targetStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', application.user_id)
+            .eq('course_id', application.course_id);
+            
+          if (updateError) {
+            console.error('Error updating existing record after unique constraint violation:', updateError);
+            throw updateError;
+          }
+        } else {
+          throw error;
+        }
       }
 
       // Update the admin_applications status with the validated status
