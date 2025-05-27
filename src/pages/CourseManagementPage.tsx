@@ -134,63 +134,68 @@ const CourseStudents = () => {
 
   return (
     <div className="space-y-8">
-      {/* Instructors Section - Shown at the very top */}
-      {hasInstructors && (
-        <div>
-          <h2 className="text-xl font-semibold font-playfair mb-4">Instruktorët</h2>
-          <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 space-y-3">
-            {instructors?.map((instructor) => (
-              <div key={instructor.id} className="p-3 bg-white rounded-md border border-purple-100 shadow-sm">
-                <div className="flex items-center">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {instructor.profiles?.name || 'Instruktor'}
-                      {instructor.is_main_instructor ? (
-                        <span className="ml-2 bg-purple-100 text-purple-800 text-xs font-medium px-2 py-0.5 rounded">
-                          Kryeinstruktor
+      {/* Course Team Section */}
+      <div className="space-y-4">
+        <h2 className="text-2xl font-semibold font-playfair text-gray-800">Ekipi i Kursit</h2>
+        
+        {/* Admins Section */}
+        {hasAdmins && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-700 mb-3">Administratorët e Kursit</h3>
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
+              {admins?.map((admin) => (
+                <div key={admin.id} className="p-3 bg-white rounded-md border border-blue-100 shadow-sm">
+                  <div className="flex items-center">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {admin.profiles?.name || 'Administrator'}
+                        <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded">
+                          Administrator
                         </span>
-                      ) : (
-                        <span className="ml-2 bg-purple-50 text-purple-700 text-xs font-medium px-2 py-0.5 rounded border border-purple-200">
-                          Instruktor
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {instructor.profiles?.email || 'Email i panjohur'}
-                    </p>
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {admin.profiles?.email || 'Email i panjohur'}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Admins Section */}
-      {hasAdmins && (
-        <div>
-          <h2 className="text-xl font-semibold font-playfair mb-4">Administratorët</h2>
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
-            {admins?.map((admin) => (
-              <div key={admin.id} className="p-3 bg-white rounded-md border border-blue-100 shadow-sm">
-                <div className="flex items-center">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {admin.profiles?.name || 'Administrator'}
-                      <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded">
-                        Admin
-                      </span>
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {admin.profiles?.email || 'Email i panjohur'}
-                    </p>
+        {/* Instructors Section */}
+        {hasInstructors && (
+          <div>
+            <h3 className="text-lg font-medium text-gray-700 mb-3">Stafi Mësimor</h3>
+            <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 space-y-3">
+              {instructors?.map((instructor) => (
+                <div key={instructor.id} className="p-3 bg-white rounded-md border border-purple-100 shadow-sm">
+                  <div className="flex items-center">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {instructor.profiles?.name || 'Instruktor'}
+                        {instructor.is_main_instructor ? (
+                          <span className="ml-2 bg-purple-100 text-purple-800 text-xs font-medium px-2 py-0.5 rounded">
+                            Instruktor Kryesor
+                          </span>
+                        ) : (
+                          <span className="ml-2 bg-purple-50 text-purple-700 text-xs font-medium px-2 py-0.5 rounded border border-purple-200">
+                            Instruktor Ndihmës
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {instructor.profiles?.email || 'Email i panjohur'}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Regular Students Section */}
       {hasStudents && (
