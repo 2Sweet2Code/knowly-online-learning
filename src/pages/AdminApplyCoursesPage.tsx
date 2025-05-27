@@ -120,20 +120,48 @@ const AdminApplyCoursesPage = () => {
 
   const applyMutation = useMutation<string, Error, string>({
     mutationFn: async (courseId: string) => {
-      if (!user) throw new Error('User not authenticated.');
+      if (!user) throw new Error('User not authenticated');
 
-      // Try inserting with minimal required fields first
-      // This will work even if status and reason columns don't exist yet
-      const { error, data } = await supabase.from('course_admins').insert({
-        course_id: courseId,
-        user_id: user.id
-      }).select('course_id').single(); 
+      // First, check if the user has already applied to this course
+      const { data: existingApplication, error: fetchError } = await supabase
+        .from('course_admins')
+        .select('id, status')
+        .eq('course_id', courseId)
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (error) {
-        console.error('Error applying for course:', error);
-        throw error;
+      if (fetchError) {
+        console.error('Error checking existing application:', fetchError);
+        throw fetchError;
       }
-      return data?.course_id || courseId; 
+
+      // If application exists, don't create a new one
+      if (existingApplication) {
+        if (existingApplication.status === 'pending') {
+          throw new Error('You have already applied to this course and your application is pending');
+        } else if (existingApplication.status === 'approved') {
+          throw new Error('You are already an admin for this course');
+        } else if (existingApplication.status === 'rejected') {
+          throw new Error('Your previous application was rejected. Please contact support if you believe this is a mistake.');
+        }
+      }
+
+      // If no existing application or it's in an unexpected state, create a new one
+      const { error: insertError, data } = await supabase
+        .from('course_admins')
+        .insert({
+          course_id: courseId,
+          user_id: user.id,
+          status: 'pending' // Explicitly set status
+        })
+        .select('course_id')
+        .single();
+
+      if (insertError) {
+        console.error('Error applying for course:', insertError);
+        throw insertError;
+      }
+      return data?.course_id || courseId;
     },
     onSuccess: (appliedCourseId) => {
       toast({
@@ -148,6 +176,7 @@ const AdminApplyCoursesPage = () => {
         description: error.message || 'Ndodhi një problem gjatë dërgimit të aplikimit.',
         variant: 'destructive',
       });
+      console.error('Application error details:', error);
     },
   });
 
