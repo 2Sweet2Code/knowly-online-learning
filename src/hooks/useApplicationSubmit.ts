@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { ApplicationStatus } from '@/types/applications';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SubmitApplicationParams {
   courseId: string;
@@ -15,15 +16,21 @@ interface UpdateStatusParams {
 
 export const useSubmitApplication = (type: 'admin' | 'instructor') => {
   const { toast } = useToast();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ courseId, message }: SubmitApplicationParams) => {
+      if (!user || !user.id) {
+        throw new Error('User not authenticated');
+      }
+
       const tableName = type === 'admin' ? 'admin_applications' : 'instructor_applications';
       
       const { data, error } = await supabase
         .from(tableName)
         .insert([
           { 
+            user_id: user.id,
             course_id: courseId,
             status: 'pending' as ApplicationStatus,
             ...(message && { message })
