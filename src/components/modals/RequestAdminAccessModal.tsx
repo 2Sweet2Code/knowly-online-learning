@@ -50,7 +50,7 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
       
       // Check if the user already has a request for this course
       const { data: existingRequest, error: fetchError } = await supabase
-        .from('admin_requests')
+        .from('admin_applications')
         .select('*')
         .eq('course_id', course.id)
         .eq('user_id', user.id)
@@ -88,7 +88,7 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
       
       // Insert the new admin request into the database
       const { error: insertError } = await supabase
-        .from('admin_requests')
+        .from('admin_applications')
         .insert(adminRequestData);
       
       if (insertError) {
