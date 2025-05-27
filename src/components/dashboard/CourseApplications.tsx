@@ -100,13 +100,13 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
     
     try {
       // First, get the application to find the user_id and course_id
-      const { data: application, error: fetchError } = await supabase
+      const { data: application, error: fetchAppError } = await supabase
         .from('admin_applications')
         .select('*')
         .eq('id', applicationId)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (fetchAppError) throw fetchAppError;
       if (!application) throw new Error('Application not found');
 
       // Ensure the status is one of the allowed values
@@ -120,19 +120,31 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       const targetStatus = status as ValidStatus;
 
       // Update the course_admins table with the application status
-      // First try to update if record exists
-      const { error: updateError } = await supabase
+      // First try to update the existing record
+      const { data: existingRecord, error: fetchRecordError } = await supabase
         .from('course_admins')
-        .update({
-          status: targetStatus,
-          updated_at: new Date().toISOString()
-        })
+        .select('id')
         .eq('user_id', application.user_id)
-        .eq('course_id', application.course_id);
+        .eq('course_id', application.course_id)
+        .single();
 
-      // If no rows were updated, insert a new record
-      let error = updateError;
-      if (!updateError) {
+      let error = null;
+      
+      if (fetchRecordError && fetchRecordError.code !== 'PGRST116') { // PGRST116 means no rows found
+        console.error('Error checking for existing record:', fetchRecordError);
+        error = fetchRecordError;
+      } else if (existingRecord) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('course_admins')
+          .update({
+            status: targetStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingRecord.id);
+        error = updateError;
+      } else {
+        // Insert new record
         const { error: insertError } = await supabase
           .from('course_admins')
           .insert({
@@ -146,8 +158,25 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       }
 
       if (error) {
-        console.error('Supabase error:', error);
-        throw error;
+        console.error('Error updating course_admins:', error);
+        // If it's a unique constraint violation, try updating the existing record
+        if (error.code === '23505') {
+          const { error: updateError } = await supabase
+            .from('course_admins')
+            .update({
+              status: targetStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', application.user_id)
+            .eq('course_id', application.course_id);
+          
+          if (updateError) {
+            console.error('Failed to update existing record after unique constraint violation:', updateError);
+            throw updateError;
+          }
+        } else {
+          throw error;
+        }
       }
 
       // Update the admin_applications status with the validated status
