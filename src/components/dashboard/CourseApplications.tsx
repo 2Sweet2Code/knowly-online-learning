@@ -45,8 +45,9 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
 
     setIsLoading(true);
     try {
+      // Always use 'admin_applications' as the table name
       let query = supabase
-        .from(`${activeTab}_applications`)
+        .from('admin_applications')
         .select(`
           *,
           user:user_id (*),
@@ -99,33 +100,22 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
     
     try {
       const { error } = await supabase
-        .from(`${activeTab}_applications`)
+        .from('admin_applications')
         .update({ status })
         .eq('id', applicationId);
 
       if (error) throw error;
 
-      // If approved, add user to course admins or instructors
-      if (status === 'approved') {
-        const application = applications.find(app => app.id === applicationId);
-        if (application) {
-          const tableName = activeTab === 'admin' ? 'course_admins' : 'course_instructors';
-          
-          await supabase.from(tableName).upsert({
-            course_id: application.course_id,
-            user_id: application.user_id,
-            status: 'active'
-          });
-        }
-      }
+      // Update the local state to reflect the change
+      setApplications(prevApplications => 
+        prevApplications.map(app => 
+          app.id === applicationId ? { ...app, status } : app
+        )
+      );
 
-      // Refresh applications
-      fetchApplications();
-      
       toast({
-        title: 'Sukses',
+        title: 'Sukses!',
         description: `Aplikimi u ${status === 'approved' ? 'miratua' : 'refuzua'} me sukses.`,
-        variant: 'default',
       });
     } catch (error) {
       console.error('Error updating application status:', error);

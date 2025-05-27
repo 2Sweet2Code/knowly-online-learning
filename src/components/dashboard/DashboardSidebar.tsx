@@ -16,8 +16,8 @@ export const DashboardSidebar = ({
   onCreateCourseClick
 }: DashboardSidebarProps) => {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
-  const isInstructor = user?.role === 'instructor';
+  const isAdmin = user?.user_metadata?.role === 'admin';
+  const isInstructor = user?.user_metadata?.role === 'instructor';
   const canViewApplications = isAdmin || isInstructor;
 
   return (
