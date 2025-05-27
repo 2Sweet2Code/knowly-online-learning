@@ -109,9 +109,15 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       if (fetchError) throw fetchError;
       if (!application) throw new Error('Application not found');
 
-      // The status must be one of: 'pending', 'approved', or 'rejected'
-      // as defined by the check constraint on the course_admins table
-      const targetStatus = status; // 'approved' or 'rejected' from the function parameters
+      // Ensure the status is one of the allowed values
+      type ValidStatus = 'pending' | 'approved' | 'rejected';
+      const validStatuses: ValidStatus[] = ['pending', 'approved', 'rejected'];
+      
+      if (!validStatuses.includes(status as ValidStatus)) {
+        throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
+      }
+
+      const targetStatus = status as ValidStatus;
 
       // Update the course_admins table with the application status
       const { error } = await supabase
@@ -126,7 +132,10 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
           ignoreDuplicates: false
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
 
       // Update the admin_applications status
       const { error: updateError } = await supabase
