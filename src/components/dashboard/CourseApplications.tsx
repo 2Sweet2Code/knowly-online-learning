@@ -109,74 +109,58 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       if (fetchAppError) throw fetchAppError;
       if (!application) throw new Error('Application not found');
 
-      // Ensure the status is one of the allowed values
+      // Define valid status values according to the database constraint
       type ValidStatus = 'pending' | 'approved' | 'rejected';
       const validStatuses: ValidStatus[] = ['pending', 'approved', 'rejected'];
       
+      // Ensure the provided status is valid
       if (!validStatuses.includes(status as ValidStatus)) {
         throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
       }
 
-      const targetStatus = status as ValidStatus;
+      // Cast to ValidStatus to ensure type safety
+      const targetStatus: ValidStatus = status as ValidStatus;
+      
+      // Log the status update for debugging
+      console.log(`Updating status to: ${targetStatus} for application:`, applicationId);
 
       // Update the course_admins table with the application status
-      // First try to update the existing record
-      const { data: existingRecord, error: fetchRecordError } = await supabase
-        .from('course_admins')
-        .select('id')
-        .eq('user_id', application.user_id)
-        .eq('course_id', application.course_id)
-        .single();
-
-      let error = null;
-      
-      if (fetchRecordError && fetchRecordError.code !== 'PGRST116') { // PGRST116 means no rows found
-        console.error('Error checking for existing record:', fetchRecordError);
-        error = fetchRecordError;
-      } else if (existingRecord) {
-        // Update existing record
-        const { error: updateError } = await supabase
+      try {
+        // First, try to update any existing record
+        const { data: updateData, error: updateError } = await supabase
           .from('course_admins')
           .update({
             status: targetStatus,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existingRecord.id);
-        error = updateError;
-      } else {
-        // Insert new record
-        const { error: insertError } = await supabase
-          .from('course_admins')
-          .insert({
-            user_id: application.user_id,
-            course_id: application.course_id,
-            status: targetStatus,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-        error = insertError;
-      }
+          .eq('user_id', application.user_id)
+          .eq('course_id', application.course_id)
+          .select()
+          .single();
 
-      if (error) {
-        console.error('Error updating course_admins:', error);
-        // If it's a unique constraint violation, try updating the existing record
-        if (error.code === '23505') {
-          const { error: updateError } = await supabase
+        // If no rows were updated, insert a new record
+        if (!updateData) {
+          console.log('No existing record found, inserting new record');
+          const { error: insertError } = await supabase
             .from('course_admins')
-            .update({
+            .insert({
+              user_id: application.user_id,
+              course_id: application.course_id,
               status: targetStatus,
+              created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
-            .eq('user_id', application.user_id)
-            .eq('course_id', application.course_id);
-          
-          if (updateError) {
-            console.error('Failed to update existing record after unique constraint violation:', updateError);
-            throw updateError;
-          }
-        } else {
-          throw error;
+            .select()
+            .single();
+
+          if (insertError) throw insertError;
+        } else if (updateError) {
+          console.error('Error updating course_admins:', updateError);
+          throw updateError;
         }
+      } catch (error) {
+        console.error('Error in course_admins update/insert:', error);
+        throw error;
       }
 
       // Update the admin_applications status with the validated status
