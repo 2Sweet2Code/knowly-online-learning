@@ -56,7 +56,26 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
     queryFn: async () => {
       if (!courseId) return [];
 
-      const { data, error: queryError } = await supabase
+      // First, get the course to check if the current user is the instructor
+      const { data: courseData, error: courseError } = await supabase
+        .from('courses')
+        .select('instructor_id')
+        .eq('id', courseId)
+        .single();
+
+      if (courseError) throw courseError;
+      if (!courseData) throw new Error('Course not found');
+
+      // Then get the current user's role
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user?.id)
+        .single();
+
+      // Build the base query
+      const query = supabase
         .from('course_admins')
         .select(`
           id, 
@@ -64,33 +83,50 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
           status, 
           created_at, 
           reason,
-          profiles ( name ) 
+          course_id,
+          profiles!inner(id, name, role)
         `)
-        .eq('course_id', courseId)
+        .eq('course_id', courseId);
+
+      // If user is not an admin and not the course instructor, they shouldn't see anything
+      if (profile?.role !== 'admin' && courseData.instructor_id !== user?.id) {
+        return [];
+      }
+
+      // Execute the query
+      const { data, error: queryError } = await query
         .order('created_at', { ascending: false });
+
+      console.log('Admin applications data:', data); // Debug log
 
       if (queryError) {
         console.error("Error fetching admin requests:", queryError);
         if (queryError.code === '42P01') { 
-             console.warn("'course_admins' table not found.");
-             toast({ title: "Warning", description: "Admin requests feature not fully set up (table missing).", variant: "default" });
-             return [];
+          console.warn("'course_admins' table not found.");
+          toast({ 
+            title: "Warning", 
+            description: "Admin requests feature not fully set up (table missing).", 
+            variant: "default" 
+          });
+          return [];
         } else {
-            throw new Error("Failed to fetch admin requests.");
+          throw new Error("Failed to fetch admin requests: " + queryError.message);
         }
       }
 
       if (!data) return [];
 
-      // Cast the data to our extended type that includes status and reason fields
-      const formattedData: AdminRequest[] = (data as unknown as CourseAdminWithProfile[]).map((req) => ({
-          id: req.id,
-          user_id: req.user_id,
-          userName: req.profiles?.name || 'Unknown User',
-          status: req.status as 'pending' | 'approved' | 'rejected',
-          created_at: req.created_at,
-          reason: req.reason
+      // Map the data to the expected format
+      const formattedData: AdminRequest[] = data.map((req: { id: string; user_id: string; status: string; created_at: string; reason?: string | null; profiles?: { name?: string | null } | null }) => ({
+        id: req.id,
+        user_id: req.user_id,
+        userName: req.profiles?.name || 'Unknown User',
+        status: req.status as 'pending' | 'approved' | 'rejected',
+        created_at: req.created_at,
+        reason: req.reason || null
       }));
+
+      console.log('Formatted admin applications:', formattedData); // Debug log
 
       return formattedData;
     },
