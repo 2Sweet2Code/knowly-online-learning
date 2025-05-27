@@ -7,10 +7,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Course, CourseAdmin } from "@/types";
 import { Database } from "@/integrations/supabase/types";
 
-// Define a type that extends the Supabase course_admins type with the missing fields
-type CourseAdminInsert = Database["public"]["Tables"]["course_admins"]["Insert"] & {
+// Define the type for admin applications since it's not in the Database type yet
+type AdminApplication = {
+  id: string;
+  user_id: string;
+  course_id: string;
   status: 'pending' | 'approved' | 'rejected';
-  reason?: string | null;
+  message: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 interface RequestAdminAccessModalProps {
@@ -45,7 +50,7 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
       
       // Check if the user already has a request for this course
       const { data: existingRequest, error: fetchError } = await supabase
-        .from('course_admins')
+        .from('admin_requests')
         .select('*')
         .eq('course_id', course.id)
         .eq('user_id', user.id)
@@ -63,9 +68,8 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
       }
       
       if (existingRequest) {
-        // Cast the existingRequest to our extended type
-        const adminRequest = existingRequest as unknown as CourseAdminInsert;
-        const status = adminRequest.status === 'pending' ? 'në pritje' : 'e aprovuar';
+        // Show message that application already exists
+        const status = existingRequest.status === 'pending' ? 'në pritje' : 'e aprovuar';
         toast({
           title: "Informacion",
           description: `Ju tashmë keni një kërkesë ${status} për këtë kurs.`,
@@ -74,18 +78,18 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
         return;
       }
       
-      // Prepare the admin request data with our extended type
-      const adminRequestData: CourseAdminInsert = {
+      // Prepare the admin request data
+      const adminRequestData = {
         course_id: course.id,
         user_id: user.id,
         status: 'pending',
-        reason: reason
-      };
+        message: reason
+      } as const;
       
       // Insert the new admin request into the database
       const { error: insertError } = await supabase
-        .from('course_admins')
-        .insert(adminRequestData as Database["public"]["Tables"]["course_admins"]["Insert"]);
+        .from('admin_requests')
+        .insert(adminRequestData);
       
       if (insertError) {
         console.error("Error submitting admin request:", insertError);
