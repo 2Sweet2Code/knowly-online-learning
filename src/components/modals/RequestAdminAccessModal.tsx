@@ -78,18 +78,30 @@ export const RequestAdminAccessModal = ({ isOpen, onClose, course }: RequestAdmi
         return;
       }
       
+      // Log the user data for debugging
+      console.log('Current user:', user);
+      
+      if (!user || !user.id) {
+        throw new Error('User not authenticated or missing user ID');
+      }
+      
       // Prepare the admin request data
       const adminRequestData = {
         course_id: course.id,
-        user_id: user.id,
+        user_id: user.id, // This should be the user's UUID
         status: 'pending',
-        message: reason
-      } as const;
+        message: reason || null
+      };
+      
+      console.log('Submitting admin application:', adminRequestData);
       
       // Insert the new admin request into the database
-      const { error: insertError } = await supabase
+      const { data, error: insertError } = await supabase
         .from('admin_applications')
-        .insert(adminRequestData);
+        .insert([adminRequestData])
+        .select();
+        
+      console.log('Insert result:', { data, error: insertError });
       
       if (insertError) {
         console.error("Error submitting admin request:", insertError);
