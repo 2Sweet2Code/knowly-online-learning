@@ -97,8 +97,10 @@ const DashboardPage = () => {
                   } />
                   <Route path=":courseId/*" element={<CourseManagementPage />} />
                 </Route>
-                <Route path="applications" element={<ManageCourseApplications />} />
-                <Route path="applications/:courseId" element={<ManageCourseApplications />} />
+                <Route path="applications">
+                  <Route index element={<ManageCourseApplications />} />
+                  <Route path=":courseId" element={<ManageCourseApplications />} />
+                </Route>
                 {user?.role === 'student' && (
                   <Route path="students" element={<DashboardStudents />} />
                 )}

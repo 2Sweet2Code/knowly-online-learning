@@ -35,6 +35,7 @@ import { safeCheckCourses } from './utils/checkCourses';
 import { DashboardUserManagement } from "./components/dashboard/DashboardUserManagement";
 import { DashboardContentModeration } from "./components/dashboard/DashboardContentModeration";
 import { SubmitAssignmentPage } from "./pages/assignments/SubmitAssignmentPage";
+import ManageCourseApplications from "./pages/ManageCourseApplications";
 // Temporarily comment out DashboardQuestions to identify build issues
 // import { DashboardQuestions } from "./components/dashboard/DashboardQuestions";
 
@@ -273,6 +274,10 @@ const App = () => {
                   <Route path="courses">
                     <Route index element={<DashboardCourses />} />
                     <Route path=":courseId" element={<CourseManagementPage />} />
+                  </Route>
+                  <Route path="applications">
+                    <Route index element={<ManageCourseApplications />} />
+                    <Route path=":courseId" element={<ManageCourseApplications />} />
                   </Route>
                   <Route path="students" element={<DashboardStudents />} />
                   {/* Temporarily comment out DashboardQuestions route */}
