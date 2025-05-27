@@ -349,7 +349,7 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <UserCog className="h-5 w-5" /> Instruktorët
+            <UserCog className="h-5 w-5" /> Stafi Mësimor
           </CardTitle>
         </CardHeader>
         <CardContent>
