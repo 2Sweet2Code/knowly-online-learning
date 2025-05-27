@@ -99,14 +99,23 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
 
   const updateStatusMutation = useMutation<void, Error, UpdateAdminStatusPayload>({ 
     mutationFn: async ({ adminId, newStatus }) => {
+      // Ensure the status is one of the allowed values
+      const validStatuses = ['pending', 'approved', 'rejected'] as const;
+      if (!validStatuses.includes(newStatus)) {
+        throw new Error(`Invalid status: ${newStatus}. Must be one of: ${validStatuses.join(', ')}`);
+      }
+
       const { error } = await supabase
         .from('course_admins')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update({ 
+          status: newStatus, 
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', adminId);
         
       if (error) {
         console.error("Error updating admin status:", error);
-        throw new Error("Failed to update admin status.");
+        throw new Error(`Failed to update admin status: ${error.message}`);
       }
     },
     onSuccess: (_, variables) => {
@@ -117,6 +126,7 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
       });
     },
     onError: (error) => {
+      console.error("Mutation error:", error);
       toast({
         title: "Error!",
         description: error.message || "Could not update status.",
