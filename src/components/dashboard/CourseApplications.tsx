@@ -120,17 +120,30 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       const targetStatus = status as ValidStatus;
 
       // Update the course_admins table with the application status
-      const { error } = await supabase
+      // First try to update if record exists
+      const { error: updateError } = await supabase
         .from('course_admins')
-        .upsert({
-          user_id: application.user_id,
-          course_id: application.course_id,
+        .update({
           status: targetStatus,
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id,course_id',
-          ignoreDuplicates: false
-        });
+        })
+        .eq('user_id', application.user_id)
+        .eq('course_id', application.course_id);
+
+      // If no rows were updated, insert a new record
+      let error = updateError;
+      if (!updateError) {
+        const { error: insertError } = await supabase
+          .from('course_admins')
+          .insert({
+            user_id: application.user_id,
+            course_id: application.course_id,
+            status: targetStatus,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        error = insertError;
+      }
 
       if (error) {
         console.error('Supabase error:', error);
@@ -138,12 +151,12 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       }
 
       // Update the admin_applications status with the validated status
-      const { error: updateError } = await supabase
+      const { error: appUpdateError } = await supabase
         .from('admin_applications')
         .update({ status: targetStatus })
         .eq('id', applicationId);
 
-      if (updateError) throw updateError;
+      if (appUpdateError) throw appUpdateError;
 
       // Update the local state to reflect the change with the validated status
       setApplications(prevApplications => 
