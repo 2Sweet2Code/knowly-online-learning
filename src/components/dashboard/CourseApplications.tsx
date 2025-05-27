@@ -11,7 +11,7 @@ type Application = {
   id: string;
   user_id: string;
   course_id: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'active';
   message?: string;
   created_at: string;
   user: {
@@ -93,7 +93,7 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
     fetchApplications();
   }, [fetchApplications]);
 
-  const handleStatusUpdate = async (applicationId: string, status: 'approved' | 'rejected') => {
+  const handleStatusUpdate = async (applicationId: string, status: 'approved' | 'rejected' | 'active') => {
     if (!user) return;
 
     setIsUpdating(prev => ({ ...prev, [applicationId]: true }));
@@ -109,14 +109,17 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       if (fetchError) throw fetchError;
       if (!application) throw new Error('Application not found');
 
+      // The status must be one of: 'pending', 'approved', or 'rejected'
+      // as defined by the check constraint on the course_admins table
+      const targetStatus = status; // 'approved' or 'rejected' from the function parameters
+
       // Update the course_admins table with the application status
-      // Use 'approved' status instead of 'active' as it's the expected value
       const { error } = await supabase
         .from('course_admins')
         .upsert({
           user_id: application.user_id,
           course_id: application.course_id,
-          status: status, // Use the same status as in admin_applications
+          status: targetStatus,
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id,course_id',
