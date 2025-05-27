@@ -11,7 +11,7 @@ type Application = {
   id: string;
   user_id: string;
   course_id: string;
-  status: 'pending' | 'approved' | 'rejected' | 'active';
+  status: 'pending' | 'approved' | 'rejected';
   message?: string;
   created_at: string;
   user: {
@@ -93,7 +93,7 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
     fetchApplications();
   }, [fetchApplications]);
 
-  const handleStatusUpdate = async (applicationId: string, status: 'approved' | 'rejected' | 'active') => {
+  const handleStatusUpdate = async (applicationId: string, status: 'approved' | 'rejected') => {
     if (!user) return;
 
     setIsUpdating(prev => ({ ...prev, [applicationId]: true }));
@@ -137,18 +137,18 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
         throw error;
       }
 
-      // Update the admin_applications status
+      // Update the admin_applications status with the validated status
       const { error: updateError } = await supabase
         .from('admin_applications')
-        .update({ status })
+        .update({ status: targetStatus })
         .eq('id', applicationId);
 
       if (updateError) throw updateError;
 
-      // Update the local state to reflect the change
+      // Update the local state to reflect the change with the validated status
       setApplications(prevApplications => 
         prevApplications.map(app => 
-          app.id === applicationId ? { ...app, status } : app
+          app.id === applicationId ? { ...app, status: targetStatus } : app
         )
       );
 
