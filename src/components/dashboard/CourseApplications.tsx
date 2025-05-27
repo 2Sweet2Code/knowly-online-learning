@@ -99,12 +99,38 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
     setIsUpdating(prev => ({ ...prev, [applicationId]: true }));
     
     try {
+      // First, get the application to find the user_id and course_id
+      const { data: application, error: fetchError } = await supabase
+        .from('admin_applications')
+        .select('*')
+        .eq('id', applicationId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!application) throw new Error('Application not found');
+
+      // Update the course_admins table with the application status
       const { error } = await supabase
+        .from('course_admins')
+        .upsert({
+          user_id: application.user_id,
+          course_id: application.course_id,
+          status: status === 'approved' ? 'active' : 'rejected',
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,course_id',
+          ignoreDuplicates: false
+        });
+
+      if (error) throw error;
+
+      // Update the admin_applications status
+      const { error: updateError } = await supabase
         .from('admin_applications')
         .update({ status })
         .eq('id', applicationId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       // Update the local state to reflect the change
       setApplications(prevApplications => 
