@@ -122,46 +122,79 @@ const AdminApplyCoursesPage = () => {
     mutationFn: async (courseId: string) => {
       if (!user) throw new Error('User not authenticated');
 
-      // First, check if the user has already applied to this course
-      const { data: existingApplication, error: fetchError } = await supabase
-        .from('course_admins')
-        .select('id, status')
-        .eq('course_id', courseId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      try {
+        // First, check if the course exists and allows admin applications
+        const { data: courseData, error: courseError } = await supabase
+          .from('courses')
+          .select('id, instructor_id, allow_admin_applications')
+          .eq('id', courseId)
+          .single();
 
-      if (fetchError) {
-        console.error('Error checking existing application:', fetchError);
-        throw fetchError;
-      }
-
-      // If application exists, don't create a new one
-      if (existingApplication) {
-        if (existingApplication.status === 'pending') {
-          throw new Error('You have already applied to this course and your application is pending');
-        } else if (existingApplication.status === 'approved') {
-          throw new Error('You are already an admin for this course');
-        } else if (existingApplication.status === 'rejected') {
-          throw new Error('Your previous application was rejected. Please contact support if you believe this is a mistake.');
+        if (courseError || !courseData) {
+          throw new Error('Could not find the specified course');
         }
-      }
 
-      // If no existing application or it's in an unexpected state, create a new one
-      const { error: insertError, data } = await supabase
-        .from('course_admins')
-        .insert({
-          course_id: courseId,
-          user_id: user.id,
-          status: 'pending' // Explicitly set status
-        })
-        .select('course_id')
-        .single();
+        // Check if the course allows admin applications
+        if (courseData.allow_admin_applications === false) {
+          throw new Error('This course is not currently accepting admin applications');
+        }
 
-      if (insertError) {
-        console.error('Error applying for course:', insertError);
-        throw insertError;
+        // Check if user is the course instructor
+        if (courseData.instructor_id === user.id) {
+          throw new Error('You are the instructor of this course and cannot apply to be an admin');
+        }
+
+        // Check for existing applications
+        const { data: existingApplication, error: fetchError } = await supabase
+          .from('course_admins')
+          .select('id, status')
+          .eq('course_id', courseId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (fetchError) {
+          console.error('Error checking existing application:', fetchError);
+          throw new Error('Failed to check existing applications');
+        }
+
+        // Handle existing application states
+        if (existingApplication) {
+          switch (existingApplication.status) {
+            case 'pending':
+              throw new Error('You have already applied to this course and your application is pending');
+            case 'approved':
+              throw new Error('You are already an admin for this course');
+            case 'rejected':
+              throw new Error('Your previous application was rejected. Please contact support if you believe this is a mistake.');
+            default:
+              // For any other status, we'll allow reapplication
+              break;
+          }
+        }
+
+        // Create new application
+        const { error: insertError, data } = await supabase
+          .from('course_admins')
+          .insert({
+            course_id: courseId,
+            user_id: user.id,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select('course_id')
+          .single();
+
+        if (insertError) {
+          console.error('Error applying for course:', insertError);
+          throw new Error('Failed to submit application. Please try again.');
+        }
+
+        return data?.course_id || courseId;
+      } catch (error) {
+        console.error('Application error:', error);
+        throw error;
       }
-      return data?.course_id || courseId;
     },
     onSuccess: (appliedCourseId) => {
       toast({
@@ -171,9 +204,19 @@ const AdminApplyCoursesPage = () => {
       queryClient.invalidateQueries({ queryKey: ['appliableCourses', user?.id] });
     },
     onError: (error: Error) => {
+      // More specific error messages based on error type
+      let errorMessage = error.message || 'Ndodhi një problem gjatë dërgimit të aplikimit.';
+      
+      // Map common error messages to more user-friendly ones
+      if (error.message.includes('duplicate key value violates unique constraint')) {
+        errorMessage = 'You have already applied to this course.';
+      } else if (error.message.includes('violates row-level security policy')) {
+        errorMessage = 'You do not have permission to perform this action.';
+      }
+      
       toast({
         title: 'Gabim në Aplikim',
-        description: error.message || 'Ndodhi një problem gjatë dërgimit të aplikimit.',
+        description: errorMessage,
         variant: 'destructive',
       });
       console.error('Application error details:', error);
