@@ -16,6 +16,7 @@ import { Navigate, Routes, Route } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import CourseManagementPage from "./CourseManagementPage";
 import AdminApplyCoursesPage from "./AdminApplyCoursesPage";
+import ManageCourseApplications from "./ManageCourseApplications";
 
 const DashboardPage = () => {
   const { user, isLoading } = useAuth();
@@ -96,6 +97,8 @@ const DashboardPage = () => {
                   } />
                   <Route path=":courseId/*" element={<CourseManagementPage />} />
                 </Route>
+                <Route path="applications" element={<ManageCourseApplications />} />
+                <Route path="applications/:courseId" element={<ManageCourseApplications />} />
                 {user?.role === 'student' && (
                   <Route path="students" element={<DashboardStudents />} />
                 )}

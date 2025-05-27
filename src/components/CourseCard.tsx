@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
 import { Course } from "../types";
-import { Users, BookOpen, Key } from "lucide-react";
+import { Users, BookOpen, Key, UserCog, UserPlus } from "lucide-react";
 import { useAuth } from '@/hooks/useAuth';
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { CourseApplicationModal } from "./modals/CourseApplicationModal";
 
 interface CourseCardProps {
   course: Course;
@@ -84,14 +85,38 @@ export const CourseCard = ({ course }: CourseCardProps) => {
   
   const isInstructor = course.instructor_id === user?.id;
   const showAccessCode = (isEnrolled || isInstructor) && !isLoading;
-  // Use the correct column name from the database schema (accessCode)
   const accessCode = course.accessCode;
+  
+  // State for application modals
+  const [showAdminAppModal, setShowAdminAppModal] = useState(false);
+  const [showInstructorAppModal, setShowInstructorAppModal] = useState(false);
+  
+  // Check user role
+  const isAdmin = user?.user_metadata?.role === 'admin';
+  const isRegularUser = user?.user_metadata?.role === 'user';
+  const isCourseInstructor = course.instructor_id === user?.id;
   
   // Use a local fallback image instead of external placeholder
   const placeholderImage = "/fallback-image.png";
   
+  // Determine if we should show application buttons
+  const showAdminApplication = isAdmin && !isCourseInstructor && !isEnrolled;
+  const showInstructorApplication = isRegularUser && !isCourseInstructor && !isEnrolled;
+  
+  // Handle card click - don't navigate if showing application buttons
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (showAdminApplication || showInstructorApplication) {
+      e.preventDefault();
+    }
+  };
+
   return (
-    <Link to={`/courses/${course.id}`} className="block bg-white border border-lightGray rounded-lg overflow-hidden shadow-sm transition-all hover:shadow-md hover:-translate-y-1">
+    <>
+      <Link 
+        to={`/courses/${course.id}`} 
+        onClick={handleCardClick}
+        className="block bg-white border border-lightGray rounded-lg overflow-hidden shadow-sm transition-all hover:shadow-md hover:-translate-y-1"
+      >
       <div className="h-44 bg-cream overflow-hidden"> {/* Ensure background color shows if image fails */}
         <img
           // Use course image if available, otherwise use placeholder
@@ -171,11 +196,54 @@ export const CourseCard = ({ course }: CourseCardProps) => {
           ) : (
             <span className="font-bold text-green-600">Falas</span>
           )}
-          <div className="btn btn-primary text-sm">
-            Shiko Kursin
-          </div>
+          
+          {showAdminApplication ? (
+            <button 
+              className="btn btn-primary text-sm flex items-center gap-1"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowAdminAppModal(true);
+              }}
+            >
+              <UserCog className="h-4 w-4" />
+              Apliko si Admin
+            </button>
+          ) : showInstructorApplication ? (
+            <button 
+              className="btn btn-primary text-sm flex items-center gap-1"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowInstructorAppModal(true);
+              }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Apliko si Instruktor
+            </button>
+          ) : (
+            <div className="btn btn-primary text-sm">
+              Shiko Kursin
+            </div>
+          )}
         </div>
       </div>
     </Link>
+    
+    {/* Application Modals */}
+    {showAdminAppModal && (
+      <CourseApplicationModal
+        courseId={course.id}
+        role="admin"
+        onClose={() => setShowAdminAppModal(false)}
+      />
+    )}
+    
+    {showInstructorAppModal && (
+      <CourseApplicationModal
+        courseId={course.id}
+        role="instructor"
+        onClose={() => setShowInstructorAppModal(false)}
+      />
+    )}
+    </>
   );
 };

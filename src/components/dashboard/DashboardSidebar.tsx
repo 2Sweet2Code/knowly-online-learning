@@ -17,6 +17,8 @@ export const DashboardSidebar = ({
 }: DashboardSidebarProps) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isInstructor = user?.role === 'instructor';
+  const canViewApplications = isAdmin || isInstructor;
 
   return (
     <aside className="w-full md:w-64 flex-shrink-0 bg-white rounded-lg p-6 border border-lightGray shadow-sm h-fit">
@@ -57,6 +59,17 @@ export const DashboardSidebar = ({
             Studentët
           </NavLink>
         </li>
+        
+        {canViewApplications && (
+          <li>
+            <NavLink 
+              to="applications" 
+              className={getNavLinkClass}
+            >
+              Aplikimet e Kursit
+            </NavLink>
+          </li>
+        )}
 
         <li>
           <NavLink 

@@ -3,11 +3,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, AlertCircle, RefreshCw, Plus, BookOpen, GraduationCap, Megaphone, Clock } from "lucide-react";
+import { Loader2, AlertCircle, RefreshCw, Plus, BookOpen, GraduationCap, Megaphone, Clock, Users } from "lucide-react";
 import { AnnouncementModal } from "./AnnouncementModal";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { enUS as en, sq } from 'date-fns/locale';
+import { PendingApplicationsWidget } from './PendingApplicationsWidget';
 
 interface Profile {
   name: string;
