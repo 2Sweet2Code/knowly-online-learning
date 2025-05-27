@@ -110,12 +110,13 @@ export const CourseApplications = ({ courseId }: CourseApplicationsProps) => {
       if (!application) throw new Error('Application not found');
 
       // Update the course_admins table with the application status
+      // Use 'approved' status instead of 'active' as it's the expected value
       const { error } = await supabase
         .from('course_admins')
         .upsert({
           user_id: application.user_id,
           course_id: application.course_id,
-          status: status === 'approved' ? 'active' : 'rejected',
+          status: status, // Use the same status as in admin_applications
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id,course_id',
