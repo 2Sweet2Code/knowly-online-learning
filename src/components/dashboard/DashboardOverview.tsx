@@ -70,7 +70,7 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
     queryFn: async () => {
       if (!user?.id) return [];
       const { data, error } = await supabase
-        .from('courses')
+        .from('courses_with_student_count')
         .select('*')
         .eq('instructor_id', user.id)
         .order('created_at', { ascending: false });
@@ -80,7 +80,18 @@ export const DashboardOverview = ({ onCreateCourseClick }: DashboardOverviewProp
         throw error;
       }
       
-      return data || [];
+      return data?.map(course => ({
+        ...course,
+        // Ensure we have all required fields
+        students: course.student_count || 0, // Legacy field
+        student_count: course.student_count || 0, // New field
+        isPaid: course.isPaid || false,
+        price: course.price || 0,
+        accessCode: course.accessCode || null,
+        allow_admin_applications: course.allow_admin_applications || false,
+        created_at: course.created_at || new Date().toISOString(),
+        updated_at: course.updated_at || new Date().toISOString()
+      })) || [];
     },
     enabled: !!user?.id
   });

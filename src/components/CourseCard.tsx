@@ -182,7 +182,7 @@ export const CourseCard = ({ course }: CourseCardProps) => {
         <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
           <div className="flex items-center">
             <Users className="h-4 w-4 mr-1" />
-            <span>{course.students} studentë</span>
+            <span>{course.student_count || 0} studentë</span>
           </div>
           <div className="flex items-center">
             <BookOpen className="h-4 w-4 mr-1" />

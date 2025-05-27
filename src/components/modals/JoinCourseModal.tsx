@@ -113,17 +113,11 @@ export const JoinCourseModal = ({ isOpen, onClose, onSuccess }: JoinCourseModalP
       
       if (enrollmentError) throw enrollmentError;
       
-      // Only increment student count if the user is not an instructor or admin
-      if (userProfile?.role !== 'instructor' && userProfile?.role !== 'admin') {
-        await supabase
-          .from('courses')
-          .update({ students: (course.students || 0) + 1 })
-          .eq('id', course.id);
-      }
-      
       // Invalidate queries to refetch enrollments and courses
+      // The student count will be automatically updated via the courses_with_student_count view
       queryClient.invalidateQueries({ queryKey: ['enrollments', user.id] });
       queryClient.invalidateQueries({ queryKey: ['courses'] });
+      queryClient.invalidateQueries({ queryKey: ['courses_with_student_count'] });
       
       toast({
         title: "Sukses!",

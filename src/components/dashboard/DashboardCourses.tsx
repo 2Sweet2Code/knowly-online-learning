@@ -33,9 +33,10 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
       if (!user) return [];
       
       const { data, error } = await supabase
-        .from('courses')
+        .from('courses_with_student_count')
         .select('*')
-        .eq('instructor_id', user.id);
+        .eq('instructor_id', user.id)
+        .order('created_at', { ascending: false });
       
       if (error) {
         console.error("Error fetching courses:", error);
@@ -53,7 +54,8 @@ export const DashboardCourses = ({ onCreateCourseClick }: DashboardCoursesProps)
         instructor: course.instructor,
         instructor_id: course.instructor_id,
         instructorId: course.instructor_id,
-        students: course.students || 0,
+        students: course.student_count || 0, // Legacy field
+        student_count: course.student_count || 0, // New field
         status: course.status as 'active' | 'draft' | 'archived',
         price: course.price || 0,
         isPaid: !!course.isPaid,

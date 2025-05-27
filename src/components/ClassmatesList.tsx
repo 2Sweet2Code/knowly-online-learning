@@ -102,24 +102,8 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
             .select('user_id, profiles:profiles!inner(role)')
             .eq('course_id', courseId) as { data: Array<{ user_id: string, profiles: { role: string } }> | null };
             
-          // Count only students (exclude instructors and admins)
-          const studentCount = enrollmentsWithRoles?.filter(e => 
-            e.profiles?.role === 'student'
-          ).length || 0;
-            
-          const { data: courseData } = await supabase
-            .from('courses')
-            .select('students')
-            .eq('id', courseId)
-            .single();
-            
-          if (courseData && courseData.students !== studentCount) {
-            // Update the student count to match the actual number of student enrollments
-            await supabase
-              .from('courses')
-              .update({ students: studentCount })
-              .eq('id', courseId);
-          }
+          // Student count is now handled by the courses_with_student_count view
+          // No need to manually update it here
         } catch (countError) {
           console.error('Error updating student count:', countError);
           // Continue anyway - this is not critical

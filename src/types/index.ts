@@ -21,7 +21,8 @@ export interface Course {
   instructor_id: string;
   instructorId: string;
   instructor_name?: string; // For displaying instructor's full name
-  students: number;
+  students: number; // Legacy field, will be deprecated
+  student_count?: number; // New field for accurate student count from database function
   status: 'draft' | 'active' | 'archived';
   price: number;
   isPaid: boolean;

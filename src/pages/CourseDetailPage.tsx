@@ -147,7 +147,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
   // Clean up the title (remove any existing code in brackets)
   const cleanTitle = course?.title?.replace(/\s*\[.*?\]\s*/, '') ?? '';
 
-  // Define the database course type
+  // Define the database course type from courses_with_student_count view
   interface DBCourseRow {
     id: string;
     title: string;
@@ -156,7 +156,7 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
     category: string;
     instructor: string;
     instructor_id: string;
-    students: number;
+    student_count: number; // From the view
     status: string;
     price: number;
     isPaid: boolean;
@@ -179,7 +179,8 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       instructor_id: dbCourse.instructor_id,
       instructorId: dbCourse.instructor_id,
       instructor_name: dbCourse.instructor, // Will be updated later if available
-      students: dbCourse.students,
+      students: dbCourse.student_count || 0, // Use student_count from the view
+      student_count: dbCourse.student_count || 0, // New field
       status: (dbCourse.status as 'draft' | 'active' | 'archived') || 'draft',
       price: dbCourse.price,
       isPaid: dbCourse.isPaid,
@@ -205,9 +206,9 @@ const CourseDetailPageContent: React.FC<CourseDetailPageProps> = ({ initialCours
       if (!courseId) throw new Error('Course ID is required');
       
       try {
-        // First, get the basic course data with all required fields
+        // First, get the basic course data with student count from the view
         const { data: courseData, error: courseError } = await supabase
-          .from('courses')
+          .from('courses_with_student_count')
           .select('*')
           .eq('id', courseId)
           .single<DBCourseRow>();

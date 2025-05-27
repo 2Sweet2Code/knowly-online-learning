@@ -10,9 +10,9 @@ const fetchCourses = async (category: string) => {
   try {
     console.log('Fetching courses with category:', category);
     
-    // Query the courses table
+    // Query the courses_with_student_count view instead of the courses table
     let query = supabase
-      .from('courses')
+      .from('courses_with_student_count')
       .select('*')
       .eq('status', 'active')
       .order('created_at', { ascending: false });
@@ -22,7 +22,7 @@ const fetchCourses = async (category: string) => {
     }
     
     console.log('Executing query...');
-    const { data, error, count } = await query;
+    const { data, error } = await query;
     
     if (error) {
       console.error("Error fetching public courses:", error);
@@ -45,7 +45,8 @@ const fetchCourses = async (category: string) => {
         instructor: course.instructor,
         instructor_id: course.instructor_id,
         instructorId: course.instructor_id,
-        students: course.students || 0,
+        students: course.student_count || 0, // Use student_count from the view
+        student_count: course.student_count || 0, // Also set student_count for the Course type
         status: course.status as 'active' | 'draft',
         price: course.price || 0,
         isPaid: course.isPaid || false,
@@ -53,10 +54,10 @@ const fetchCourses = async (category: string) => {
         updated_at: course.updated_at,
         accessCode: course.accessCode || '',
         allow_admin_applications: course.allow_admin_applications || false
-      } as Course; // Type assertion to ensure type safety
+      } as Course;
     });
     
-    console.log('Formatted courses:', formattedCourses);
+    console.log('Formatted courses with student counts:', formattedCourses);
     return formattedCourses;
   } catch (error) {
     console.error('Error in fetchCourses:', error);

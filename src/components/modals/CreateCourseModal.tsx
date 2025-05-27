@@ -99,7 +99,6 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
           instructor: user.name,
           instructor_id: user.id,
           status: 'draft',
-          students: 0,
           price: isPaid ? Number(price) : null,
           isPaid: isPaid,
           accessCode: courseAccessCode,
@@ -129,11 +128,8 @@ export const CreateCourseModal = ({ isOpen, onClose, onSuccess }: CreateCourseMo
             console.error('Error enrolling instructor:', enrollmentError);
             // Don't throw, we'll still consider this a success
           } else {
-            // Update the student count only if enrollment was successful
-            await supabase
-              .from('courses')
-              .update({ students: 1 })
-              .eq('id', data.id);
+            // The student count will be automatically updated via the courses_with_student_count view
+            // No need to manually update it here
           }
         } catch (enrollError) {
           console.error('Failed to enroll instructor:', enrollError);
