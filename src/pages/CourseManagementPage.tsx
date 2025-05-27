@@ -13,19 +13,84 @@ import type { Database } from '@/types/supabase';
 
 const CourseStudents = () => {
   const { courseId } = useParams<{ courseId: string }>();
-  const { data: students, isLoading, error } = useQuery({
+  
+  // Fetch regular students (non-instructors, non-admins)
+  const { data: students, isLoading: isLoadingStudents, error: studentsError } = useQuery({
     queryKey: ['courseStudents', courseId],
     queryFn: async () => {
       if (!courseId) return [];
       
-      const { data, error } = await supabase
+      // First get all enrollments
+      const { data: enrollments, error } = await supabase
         .from('course_enrollments')
         .select('*, profiles!profiles_id_fkey(*)')
         .eq('course_id', courseId);
 
       if (error) {
-        console.error("Error fetching course students:", error);
+        console.error("Error fetching course enrollments:", error);
         throw error;
+      }
+
+      // Filter out instructors and admins (they'll be shown in their own sections)
+      return enrollments.filter(e => !e.is_instructor) || [];
+    },
+    enabled: !!courseId,
+  });
+
+  // Fetch instructors
+  const { data: instructors, isLoading: isLoadingInstructors, error: instructorsError } = useQuery({
+    queryKey: ['courseInstructors', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      // Get the course to find the main instructor
+      const { data: courseData, error: courseError } = await supabase
+        .from('courses')
+        .select('instructor_id')
+        .eq('id', courseId)
+        .single();
+
+      if (courseError) {
+        console.error("Error fetching course:", courseError);
+        return [];
+      }
+
+      // Get all instructors for this course
+      const { data: enrollments, error } = await supabase
+        .from('course_enrollments')
+        .select('*, profiles!profiles_id_fkey(*)')
+        .eq('course_id', courseId)
+        .eq('is_instructor', true);
+
+      if (error) {
+        console.error("Error fetching instructors:", error);
+        return [];
+      }
+
+      // Mark the main instructor
+      return enrollments.map(instructor => ({
+        ...instructor,
+        is_main_instructor: instructor.user_id === courseData.instructor_id
+      }));
+    },
+    enabled: !!courseId,
+  });
+
+  // Fetch admins
+  const { data: admins, isLoading: isLoadingAdmins, error: adminsError } = useQuery({
+    queryKey: ['courseAdmins', courseId],
+    queryFn: async () => {
+      if (!courseId) return [];
+      
+      const { data, error } = await supabase
+        .from('course_admins')
+        .select('*, profiles!user_id(*)')
+        .eq('course_id', courseId)
+        .eq('status', 'approved'); // Only show approved admins
+
+      if (error) {
+        console.error("Error fetching course admins:", error);
+        return []; // Don't throw error if table doesn't exist yet
       }
 
       return data || [];
@@ -33,11 +98,14 @@ const CourseStudents = () => {
     enabled: !!courseId,
   });
 
+  const isLoading = isLoadingStudents || isLoadingAdmins || isLoadingInstructors;
+  const error = studentsError || adminsError || instructorsError;
+
   if (isLoading) {
     return (
       <div className="text-center py-8">
         <Loader2 className="h-6 w-6 animate-spin text-brown mx-auto" />
-        <p className="mt-2 text-gray-600">Po ngarkohen studentët...</p>
+        <p className="mt-2 text-gray-600">Po ngarkohen të dhënat...</p>
       </div>
     );
   }
@@ -46,39 +114,106 @@ const CourseStudents = () => {
     return (
       <div className="text-center py-4 text-red-500">
         <AlertCircle className="h-6 w-6 mx-auto mb-2" />
-        <p>Ndodhi një gabim gjatë ngarkimit të studentëve.</p>
+        <p>Ndodhi një gabim gjatë ngarkimit të të dhënave.</p>
       </div>
     );
   }
 
-  if (!students || students.length === 0) {
+  const hasStudents = students && students.length > 0;
+  const hasInstructors = instructors && instructors.length > 0;
+  const hasAdmins = admins && admins.length > 0;
+
+  if (!hasStudents && !hasInstructors && !hasAdmins) {
     return (
       <div className="text-center py-8 px-4 bg-gray-50 rounded-md border border-gray-200">
         <Users className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-        <p className="text-gray-600">Nuk ka studentë të regjistruar për këtë kurs ende.</p>
+        <p className="text-gray-600">Nuk ka përdorues të regjistruar për këtë kurs ende.</p>
       </div>
     );
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold font-playfair mb-4">Studentët</h2>
-      <div className="space-y-4">
-        {students.map((student) => (
-          <div key={student.id} className="p-4 border rounded-md shadow-sm bg-white">
-            <div className="flex items-center">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-brown-dark truncate">
-                  {student.profiles.name}
-                </p>
-                <p className="text-sm text-gray-500 truncate">
-                  {student.profiles.email}
-                </p>
+    <div className="space-y-8">
+      {/* Instructors Section - Shown at the very top */}
+      {hasInstructors && (
+        <div>
+          <h2 className="text-xl font-semibold font-playfair mb-4">Instruktorët</h2>
+          <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 space-y-3">
+            {instructors?.map((instructor) => (
+              <div key={instructor.id} className="p-3 bg-white rounded-md border border-purple-100 shadow-sm">
+                <div className="flex items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {instructor.profiles?.name || 'Instruktor'}
+                      {instructor.is_main_instructor ? (
+                        <span className="ml-2 bg-purple-100 text-purple-800 text-xs font-medium px-2 py-0.5 rounded">
+                          Kryeinstruktor
+                        </span>
+                      ) : (
+                        <span className="ml-2 bg-purple-50 text-purple-700 text-xs font-medium px-2 py-0.5 rounded border border-purple-200">
+                          Instruktor
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {instructor.profiles?.email || 'Email i panjohur'}
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {/* Admins Section */}
+      {hasAdmins && (
+        <div>
+          <h2 className="text-xl font-semibold font-playfair mb-4">Administratorët</h2>
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
+            {admins?.map((admin) => (
+              <div key={admin.id} className="p-3 bg-white rounded-md border border-blue-100 shadow-sm">
+                <div className="flex items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {admin.profiles?.name || 'Administrator'}
+                      <span className="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded">
+                        Admin
+                      </span>
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {admin.profiles?.email || 'Email i panjohur'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Regular Students Section */}
+      {hasStudents && (
+        <div>
+          <h2 className="text-xl font-semibold font-playfair mb-4">Studentët</h2>
+          <div className="space-y-3">
+            {students.map((student) => (
+              <div key={student.id} className="p-3 bg-white rounded-md border border-gray-200 shadow-sm">
+                <div className="flex items-center">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {student.profiles?.name || 'Student'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">
+                      {student.profiles?.email || 'Email i panjohur'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
