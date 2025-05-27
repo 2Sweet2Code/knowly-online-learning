@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { useSubmitApplication } from '@/hooks/useApplicationSubmit';
 
 interface CourseApplicationModalProps {
   courseId: string;
@@ -17,47 +17,27 @@ export const CourseApplicationModal = ({ courseId, role, onClose }: CourseApplic
   const { user } = useAuth();
   const { toast } = useToast();
   const [message, setMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { mutate: submitApplication, isPending: isSubmitting } = useSubmitApplication(role);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    setIsSubmitting(true);
-    
-    try {
-      const tableName = role === 'admin' ? 'course_admins' : 'course_instructors';
-      
-      const { error } = await supabase
-        .from(tableName)
-        .insert([
-          { 
-            course_id: courseId,
-            user_id: user.id,
-            status: 'pending',
-            message: message.trim() || null
-          }
-        ]);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Aplikimi u dërgua',
-        description: `Aplikimi juaj për rolin e ${role === 'admin' ? 'administratorit' : 'instruktorit'} u dërgua me sukses.`,
-        variant: 'default',
-      });
-      
-      onClose();
-    } catch (error) {
-      console.error('Error submitting application:', error);
-      toast({
-        title: 'Gabim',
-        description: 'Ndodhi një gabim gjatë dërgimit të aplikimit. Ju lutemi provoni përsëri më vonë.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
+    submitApplication(
+      { 
+        courseId, 
+        message: message.trim() || undefined 
+      },
+      {
+        onSuccess: () => {
+          onClose();
+        },
+        onError: (error: Error) => {
+          console.error('Error submitting application:', error);
+          // The error handling is already done in the useSubmitApplication hook
+        }
+      }
+    );
   };
 
   return (
