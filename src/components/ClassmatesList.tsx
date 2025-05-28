@@ -229,16 +229,16 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
           .eq('user_id', user.id)
       ]);
 
-      // 4. Update UI and redirect
-      setClassmates(prev => prev.filter(c => c.id !== user.id));
-      
-      // Invalidate queries
+      // 4. Invalidate queries first
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['enrollments', courseId] }),
         queryClient.invalidateQueries({ queryKey: ['course', courseId] }),
         queryClient.invalidateQueries({ queryKey: ['courses'] }),
         queryClient.invalidateQueries({ queryKey: ['user-enrollments', user.id] })
       ]);
+      
+      // Update UI
+      setClassmates(prev => prev.filter(c => c.id !== user.id));
 
       // Show success message
       toast({
@@ -247,9 +247,8 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
         variant: 'default',
       });
 
-      // Redirect to courses page
-      navigate('/courses');
-      window.location.reload();
+      // Redirect to courses page with a hard refresh to ensure clean state
+      window.location.href = '/courses';
     } catch (error) {
       console.error('Error leaving course:', error);
       toast({

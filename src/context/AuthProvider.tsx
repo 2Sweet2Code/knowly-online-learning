@@ -589,7 +589,7 @@ setUser({
     return signOut();
   }, [signOut]);
 
-  const signup = React.useCallback(async (name: string, email: string, password: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
+  const signup = React.useCallback(async (email: string, password: string, name: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
     try {
       setState(prev => ({ ...prev, isLoading: true }));
       
