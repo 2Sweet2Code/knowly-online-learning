@@ -9,7 +9,7 @@ interface SubmitApplicationParams {
   message?: string;
 }
 
-interface UpdateStatusParams {
+export interface UpdateStatusParams {
   status: ApplicationStatus;
   reason?: string;
 }

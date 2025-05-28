@@ -3,14 +3,26 @@ import { X, Loader2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Profile, CourseAdmin } from "@/types";
-import { Database } from "@/integrations/supabase/types";
+import { Database } from "@/types/database.types";
 
-// Define a type that extends the Supabase course_admins type with the missing fields
-type CourseAdminInsert = Database["public"]["Tables"]["course_admins"]["Insert"] & {
-  status: 'pending' | 'approved' | 'rejected';
-  reason?: string | null;
+type Profile = Database['public']['Tables']['profiles']['Row'];
+type CourseAdmin = Database['public']['Tables']['course_admins']['Row'];
+
+type ApiResponse = {
+  id: string;
+  user_id: string;
+  status: string;
+  created_at: string;
+  reason: string | null;
+  course_id: string;
+  profiles: {
+    id: string;
+    name: string | null;
+    role: string | null;
+  }[]; // Note: profiles is an array, not a single object
 };
 
 interface ManageCourseAdminsModalProps {
@@ -26,20 +38,12 @@ interface AdminRequest {
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   reason?: string | null;
+  course_id: string;
 }
 
 interface UpdateAdminStatusPayload {
   adminId: string;
   newStatus: 'approved' | 'rejected';
-}
-
-type CourseAdminWithProfile = {
-    id: string;
-    user_id: string;
-    status: string;
-    created_at: string;
-    reason: string | null;
-    profiles: Pick<Profile, 'name'> | null;
 };
 
 export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCourseAdminsModalProps) => {
@@ -117,14 +121,24 @@ export const ManageCourseAdminsModal = ({ isOpen, onClose, courseId }: ManageCou
       if (!data) return [];
 
       // Map the data to the expected format
-      const formattedData: AdminRequest[] = data.map((req: { id: string; user_id: string; status: string; created_at: string; reason?: string | null; profiles?: { name?: string | null } | null }) => ({
-        id: req.id,
-        user_id: req.user_id,
-        userName: req.profiles?.name || 'Unknown User',
-        status: req.status as 'pending' | 'approved' | 'rejected',
-        created_at: req.created_at,
-        reason: req.reason || null
-      }));
+      const formattedData: AdminRequest[] = data.map((req) => {
+        // Get the first profile if available
+        const profile = Array.isArray(req.profiles) ? req.profiles[0] : null;
+        
+        // Ensure we have all required fields with proper fallbacks
+        const status = (req.status || 'pending') as 'pending' | 'approved' | 'rejected';
+        const userName = profile?.name || 'Unknown User';
+        
+        return {
+          id: req.id,
+          user_id: req.user_id,
+          userName,
+          status,
+          created_at: req.created_at || new Date().toISOString(),
+          reason: req.reason || null,
+          course_id: req.course_id
+        };
+      });
 
       console.log('Formatted admin applications:', formattedData); // Debug log
 

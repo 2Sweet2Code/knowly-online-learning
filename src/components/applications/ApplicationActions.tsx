@@ -14,13 +14,20 @@ import {
   AlertCircle,
   Clock
 } from 'lucide-react';
-import { useUpdateApplicationStatus } from '@/hooks/useApplicationSubmit';
+import { useUpdateApplicationStatus, type UpdateStatusParams } from '@/hooks/useApplicationSubmit';
 import { ApplicationView } from '@/types/applications';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Database } from '@/types/database.types';
+
+type ApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+type ApplicationWithType = ApplicationView & {
+  application_type: 'admin' | 'instructor';
+};
 
 interface ApplicationActionsProps {
-  application: ApplicationView;
+  application: ApplicationWithType;
   onStatusChange: () => void;
 }
 
@@ -31,17 +38,23 @@ export const ApplicationActions = ({ application, onStatusChange }: ApplicationA
   const [action, setAction] = useState<'approve' | 'reject' | null>(null);
   
   const updateStatus = useUpdateApplicationStatus(
-    application.application_type as 'admin' | 'instructor',
+    application.application_type,
     application.id
   );
 
-  const handleAction = async (newStatus: 'approved' | 'rejected') => {
+  const handleAction = async (status: ApplicationStatus) => {
+    if (!application) return;
+
     try {
-      await updateStatus.mutateAsync({
-        status: newStatus,
-        ...(newStatus === 'rejected' && rejectionReason && { reason: rejectionReason })
-      });
+      const params: UpdateStatusParams = {
+        status,
+        ...(status === 'rejected' && { reason: rejectionReason })
+      };
+      
+      await updateStatus.mutateAsync(params);
       onStatusChange();
+      setIsConfirmDialogOpen(false);
+      setRejectionReason('');
     } catch (error) {
       console.error('Error updating application status:', error);
     } finally {
@@ -123,9 +136,9 @@ export const ApplicationActions = ({ application, onStatusChange }: ApplicationA
                 handleAction(action === 'approve' ? 'approved' : 'rejected');
               }}
               className={action === 'reject' ? 'bg-red-600 hover:bg-red-700' : ''}
-              disabled={updateStatus.isLoading}
+              disabled={updateStatus.isPending}
             >
-              {updateStatus.isLoading ? (
+              {updateStatus.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : action === 'approve' ? (
                 <Check className="mr-2 h-4 w-4" />

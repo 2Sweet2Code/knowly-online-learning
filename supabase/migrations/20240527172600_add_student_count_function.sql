@@ -22,5 +22,5 @@ SELECT
 FROM courses c;
 
 -- Grant permissions
-GRANTANT EXECUTE ON FUNCTION get_student_count TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION get_student_count TO authenticated, anon;
 GRANT SELECT ON courses_with_student_count TO authenticated, anon;

@@ -1,0 +1,421 @@
+# Sistemi i Platformës së Mësimit në Linjë - Knowly
+
+## Tabela e Përmbajtjes
+1. [Sistemi i Autentifikimit](#1-sistemi-i-autentifikimit)
+2. [Menaxhimi i Kurseve](#2-menaxhimi-i-kurseve)
+3. [Komponentët e Tabs-ave të Kursit](#3-komponentët-e-tabs-ave-të-kursit)
+4. [Paneli i Kontrollit (Dashboard)](#4-paneli-i-kontrollit-dashboard)
+5. [Menaxhimi i Përmbajtjes](#5-menaxhimi-i-përmbajtjes)
+6. [Struktura e Bazës së Të Dhënave](#6-struktura-e-bazës-së-të-dhënave)
+7. [Menaxhimi i Gjendjes](#7-menaxhimi-i-gjendjes)
+8. [Siguria](#8-siguria)
+9. [Ndërfaqja e Përdoruesit](#9-ndërfaqja-e-përdoruesit)
+10. [Struktura e Dosjeve](#10-struktura-e-dosjeve)
+11. [Karakteristikat Kryesore](#11-karakteristikat-kryesore)
+
+## 1. Sistemi i Autentifikimit
+**Vendndodhja:** `src/context/AuthProvider.tsx`
+
+### Si funksionon:
+- Përdor Supabase për autentifikim
+- Menaxhon sesionet dhe gjendjen e autentifikimit
+- Trajton hyrjen, regjistrimin dhe daljen e përdoruesve
+- Njëkëron të dhënat e përdoruesve me tabelën `profiles`
+- Siguron kontekstin e përdoruesit në të gjithë aplikacionin
+
+### Karakteristika Kryesore:
+- Ruajtja e sesioneve
+- Kontrolli i aksesit bazuar në role
+- Krijimi automatik i profilit
+- Trajtimi i gabimeve me logjikë përsëritjeje
+
+## 2. Menaxhimi i Kurseve
+**Vendndodhja:** `src/components/course/`
+
+### Komponentët Kryesorë:
+1. **Menaxhuesi i Përmbajtjes së Kursit** (`CourseContentManager.tsx`)
+   ```typescript
+   // Përdorimi i useQuery për të marrë përmbajtjen e kursit
+   const { data: courseContent, isLoading } = useQuery(
+     ['courseContent', courseId],
+     async () => {
+       const { data, error } = await supabase
+         .from('course_content')
+         .select('*')
+         .eq('course_id', courseId)
+         .order('position', { ascending: true });
+       
+       if (error) throw error;
+       return data;
+     }
+   );
+
+   // Për renditjen e përmbajtjes me drag-and-drop
+   const onDragEnd = (result) => {
+     if (!result.destination) return;
+     
+     const items = Array.from(courseContent);
+     const [reorderedItem] = items.splice(result.source.index, 1);
+     items.splice(result.destination.index, 0, reorderedItem);
+     
+     // Përditësimi i pozicionit në bazën e të dhënave
+     const updates = items.map((item, index) => ({
+       id: item.id,
+       position: index,
+       updated_at: new Date().toISOString()
+     }));
+     
+     await supabase.from('course_content').upsert(updates);
+   };
+   ```
+   - Komponenti përdor React Query për menaxhimin e gjendjes dhe cache
+   - Implementon drag-and-drop përmes react-beautiful-dnd
+   - Përdor Supabase për operacionet me bazën e të dhënave
+   - Ofron validim në kohë reale për lloje të ndryshme përmbajtjesh
+
+2. **Cilësimet e Kursit** (`CourseSettings.tsx`)
+   ```typescript
+   // Përdorimi i React Hook Form për form validation
+   const { register, handleSubmit, formState: { errors } } = useForm({
+     defaultValues: async () => {
+       // Marrja e të dhënave aktuale të kursit
+       const { data } = await supabase
+         .from('courses')
+         .select('*')
+         .eq('id', courseId)
+         .single();
+       return data;
+     }
+   });
+
+   // Për ngarkimin e imazhit
+   const handleImageUpload = async (e) => {
+     const file = e.target.files[0];
+     const fileExt = file.name.split('.').pop();
+     const fileName = `${courseId}/${Math.random()}.${fileExt}`;
+     
+     const { error: uploadError } = await supabase.storage
+       .from('course-images')
+       .upload(fileName, file);
+     
+     if (!uploadError) {
+       const { data: { publicUrl } } = supabase.storage
+         .from('course-images')
+         .getPublicUrl(fileName);
+       
+       // Përditësimi i URL-së së imazhit në bazën e të dhënave
+       await supabase
+         .from('courses')
+         .update({ image_url: publicUrl })
+         .eq('id', courseId);
+     }
+   };
+   ```
+   - Përdor React Hook Form për validim dhe menaxhim të formave
+   - Implementon ngarkim të sigurt skedash me Supabase Storage
+   - Përditëson në kohë reale ndryshimet në bazën e të dhënave
+   - Ofron validim në frontend dhe backend
+
+3. **Njoftimet e Kursit** (`CourseAnnouncements.tsx`)
+   ```typescript
+   // Përdorimi i Supabase realtime për njoftime të drejtpërdrejta
+   useEffect(() => {
+     const subscription = supabase
+       .from('announcements')
+       .on('*', payload => {
+         // Përditësimi i listës së njoftimeve në kohë reale
+         if (payload.eventType === 'INSERT') {
+           setAnnouncements(prev => [payload.new, ...prev]);
+         } else if (payload.eventType === 'UPDATE') {
+           setAnnouncements(prev => 
+             prev.map(ann => ann.id === payload.new.id ? payload.new : ann)
+           );
+         }
+       })
+       .subscribe();
+
+     return () => {
+       subscription.unsubscribe();
+     };
+   }, []);
+
+   // Për krijimin e njoftimeve
+   const createAnnouncement = async (data) => {
+     const { error } = await supabase
+       .from('announcements')
+       .insert([
+         { 
+           ...data, 
+           course_id: courseId,
+           author_id: user.id,
+           is_pinned: false
+         }
+       ]);
+     
+     if (!error) {
+       // Dërgo njoftim me email
+       await supabase.functions.invoke('send-announcement', {
+         body: JSON.stringify({
+           announcement: data,
+           courseId,
+           userIds: enrolledStudents
+         })
+       });
+     }
+   };
+   ```
+   - Përdor Supabase Realtime për përditësime të menjëhershme
+   - Implementon sistemin e njoftimeve me email përmes Supabase Functions
+   - Ofron filtrim dhe kërkim të avancuar
+   - Ruajtja e historikut të ndryshimeve për çdo njoftim
+
+4. **Lista e Studentëve** (`CourseStudentsList.tsx`)
+   ```typescript
+   // Marrja e listës së studentëve me statistikat e tyre
+   const fetchStudents = async () => {
+     const { data, error } = await supabase
+       .from('course_enrollments')
+       .select(`
+         user:profiles(
+           id,
+           full_name,
+           email,
+           avatar_url
+         ),
+         last_accessed,
+         progress,
+         role
+       `)
+       .eq('course_id', courseId);
+
+     if (!error && data) {
+       setStudents(data);
+     }
+   };
+
+   // Për ndryshimin e roleve të studentëve
+   const updateStudentRole = async (userId, newRole) => {
+     const { error } = await supabase
+       .from('course_enrollments')
+       .update({ role: newRole })
+       .eq('user_id', userId)
+       .eq('course_id', courseId);
+     
+     if (!error) {
+       // Përditëso UI-në pa bërë fetch të ri
+       setStudents(prev => 
+         prev.map(s => 
+           s.user.id === userId ? { ...s, role: newRole } : s
+         )
+       );
+     }
+   };
+
+   // Për dërgimin e email-eve grupor
+   const sendBulkEmails = async (recipients, subject, content) => {
+     const { error } = await supabase.functions.invoke('send-bulk-emails', {
+       body: JSON.stringify({
+         recipients,
+         subject,
+         content,
+         courseId
+       })
+     });
+     
+     return !error;
+   };
+   ```
+   - Përdor Supabase për menaxhimin e përdoruesve dhe roleve
+   - Implementon validim në kohë reale për ndryshimet e roleve
+   - Ofron API për dërgim të email-eve grupor
+   - Përfshin statistikat e pjesëmarrjes në kohë reale
+
+## 3. Komponentët e Tabs-ave të Kursit
+**Vendndodhja:** `src/components/course/ContentTabs.tsx`
+
+### Përshkrim:
+Sistemi i tabs-ave lejon navigim të lehtë midis seksioneve të ndryshme të kursit.
+
+### Karakteristika:
+1. **Përmbajtja**
+   - Shfaq të gjithë materialet e kursit
+   - Organizim sipas moduleve ose temave
+   - Shënime të shpejta për përmbajtjet e reja
+   - Filtrim sipas llojit të përmbajtjes
+
+2. **Detyrat**
+   - Lista e të gjitha detyrave të kursit
+   - Afatet e afërta dhe të përfunduara
+   - Statusi i dorëzimit për secilën detyrë
+   - Lidhje të drejtpërdrejta për dorëzim
+
+3. **Njoftimet**
+   - Njoftimet e fundit nga instruktorët
+   - Komentet dhe diskutimet
+   - Njoftime të rëndësishme të shënuara
+
+4. **Diskutimet**
+   - Forume diskutimesh për çdo temë
+   - Pyetje dhe përgjigje
+   - Diskutime të gjalla midis studentëve
+
+5. **Notat**
+   - Pasqyrë e notave për secilën detyrë
+   - Komente dhe komente nga instruktorët
+   - Gjurmim i progresit gjatë gjithë kursit
+
+## 4. Paneli i Kontrollit (Dashboard)
+**Vendndodhja:** `src/components/dashboard/`
+
+### Për Instruktorët:
+1. **Pamja e Përgjithshme** (`DashboardOverview.tsx`)
+   - Statistikat e kurseve tuaja
+   - Aktiviteti i fundit i studentëve
+   - Njoftimet dhe lajmet e fundit
+   - Krijimi i shpejtë i kurseve të reja
+
+2. **Menaxhimi i Kurseve** (`DashboardCourses.tsx`)
+   - Lista e të gjitha kurseve tuaja
+   - Statusi i çdo kursi (aktiv, draft, arkivuar)
+   - Numri i studentëve të regjistruar
+   - Butona të shpejtë për menaxhim
+
+3. **Menaxhimi i Studentëve** (`DashboardStudents.tsx`)
+   - Lista e të gjithë studentëve
+   - Gjurmimi i përparimit
+   - Menaxhimi i lejeve dhe roleve
+   - Komunikimi direkt
+
+4. **Analitika** (`DashboardAnalytics.tsx`)
+   - Statistikat e përdorimit të kursit
+   - Raporte për pjesëmarrjen e studentëve
+   - Analiza e performancës
+   - Eksportimi i të dhënave
+
+5. **Njoftimet** (`DashboardAnnouncements.tsx`)
+   - Krijoni dhe menaxhoni njoftimet
+   - Shikoni historikun e njoftimeve
+   - Menaxhoni komentet dhe diskutimet
+
+### Për Studentët:
+1. **Kurset e Mia**
+   - Kurse të regjistruara
+   - Progresi i përgjithshëm
+   - Vazhdoni ku keni mbetur
+   - Rekomandime kursesh
+
+2. **Detyrat**
+   - Afatet e ardhshme
+   - Detyrat e përfunduara
+   - Kërkesa për ndihmë
+   - Dorëzimet tuaja
+
+3. **Vlerësimet**
+   - Notat tuaja
+   - Komentet e instruktorëve
+   - Kërkesa rishikimi
+   - Krahasoni performancën tuaj me mesataren e klasës
+
+4. **Vazhdimësia e Mësimit**
+   - Aktivitetet e fundit
+   - Burimet e reja të përdorura
+   - Këshilla personalizuese
+   - Qasje të shpejta në materialet e përdorura shpesh
+   - Shfaq dhe menaxhon njoftimet e kursit
+   - Lejon instruktorët të krijojnë dhe fshijnë njoftime
+   - Shfaq detajet dhe komentet e njoftimeve
+
+4. **Shikuesi i Përmbajtjes së Kursit** (`CourseContentViewer.tsx`)
+   - Shfaq përmbajtjen e kursit për studentët
+   - Trajton lloje të ndryshme përmbajtjesh (tekst, skedarë, video, etj.)
+   - Menaxhon statusin e regjistrimit të studentëve
+
+## 3. Menaxhimi i Përmbajtjes
+**Vendndodhja:** `src/components/course/Content*.tsx`
+
+### Komponentët Kyç:
+1. **Lista e Përmbajtjes** (`ContentList.tsx`)
+   - Shfaq një listë të përmbajtjes së kursit
+   - Mbështet rirenditjen me "zvarritje dhe lëshim"
+   - Menaxhon dukshmërinë dhe publikimin e përmbajtjes
+
+2. **Përmbajtja Individuale** (`ContentItem.tsx`)
+   - Shfaq artikuj individualë të përmbajtjes
+   - Tregon llojin, titullin dhe statusin e përmbajtjes
+   - Ofron veprime për instruktorët (modifiko, fshi, publiko)
+
+3. **Forma e Përmbajtjes** (`ContentForm.tsx`)
+   - Formular për krijimin/modifikimin e përmbajtjes
+   - Trajton ngarkimet e skedarëve dhe URL-të e përmbajtjes
+   - Validon të dhënat para dërgimit
+
+## 4. Struktura e Bazës së Të Dhënave
+Sistemi përdor Supabase me tabelat kryesore të mëposhtme:
+
+1. **profiles**
+   - Ruan informacionin e përdoruesve
+   - Menaxhon rolet e përdoruesve (student, instruktor, administrator)
+
+2. **courses**
+   - Ruan informacionin e kurseve
+   - Gjurmizon statusin dhe cilësimet e kursit
+   - Lidhet me instruktorët
+
+3. **course_content**
+   - Ruan të gjitha materialet e kursit
+   - Mbështet lloje të ndryshme përmbajtjesh
+   - Gjurmizon dukshmërinë dhe renditjen e përmbajtjes
+
+4. **course_announcements**
+   - Ruan njoftimet e kursit
+   - Gjurmizon krijimin dhe përditësimet
+
+## 5. Menaxhimi i Gjendjes
+- Përdor React Context për gjendjen globale
+- Implementon hook-e të personalizuar për marrjen e të dhënave
+- Përdor React Query për menaxhimin e gjendjes së serverit
+- Menaxhon gjendjen lokale me useState dhe useEffect të React
+
+## 6. Siguria
+- Politika të Sigurisë në Nivel Rreshtash (RLS) në Supabase
+- Kontrolli i aksesit bazuar në role
+- Rruge të mbrojtura
+- Ngarkime të sigurta skedarësh
+
+## 7. Ndërfaqja e Përdoruesit
+- E ndërtuar me React dhe TypeScript
+- Përdor Tailwind CSS për stile
+- Dizajn përgjegjës për të gjitha pajisjet
+- Komponentë të aksesueshëm
+
+## 8. Struktura e Dosjeve
+```
+src/
+├── components/
+│   └── course/          # Komponentë të lidhur me kurset
+├── context/             # Ofrues të kontekstit
+├── hooks/               # Hook-e të personalizuar
+├── pages/               # Komponentë të faqeve
+├── services/            # Shërbime API
+└── types/               # Llojet e TypeScript
+```
+
+## 9. Karakteristika Kryesore
+1. **Për Instruktorët:**
+   - Krijoni dhe menaxhoni kurse
+   - Ngarkoni materiale kursi
+   - Krijoni njoftime
+   - Menaxhoni regjistrimet e studentëve
+   - Vlerësoni detyrat
+
+2. **Për Studentët:**
+   - Shfletoni dhe regjistrohuni në kurse
+   - Aksesoni materialet e kursit
+   - Paraqisni detyrat
+   - Shikoni notat
+   - Merrni njoftime
+
+3. **Për Administratorët:**
+   - Menaxhimi i përdoruesve
+   - Moderimi i kurseve
+   - Konfigurimi i sistemit
