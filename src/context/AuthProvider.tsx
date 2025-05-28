@@ -471,24 +471,44 @@ setUser({
     }
   }, [getErrorMessage, setState]);
 
+  // Helper function to validate email format
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   // Signup function
   const signUp = React.useCallback(async (email: string, password: string, name: string, role: 'student' | 'instructor' | 'admin' = 'student'): Promise<void> => {
     try {
       setIsLoading(true);
       
+      // Trim and validate input
+      const trimmedEmail = email.trim();
+      const trimmedName = name.trim();
+      
       // Validate input
-      if (!email || !password || !name) {
-        throw new Error('Please fill in all required fields');
+      if (!trimmedEmail || !password || !trimmedName) {
+        throw new Error('Ju lutemi plotësoni të gjitha fushat e detyrueshme.');
+      }
+      
+      // Validate email format
+      if (!isValidEmail(trimmedEmail)) {
+        throw new Error('Ju lutemi shkruani një email të vlefshëm.');
+      }
+      
+      // Validate password strength
+      if (password.length < 6) {
+        throw new Error('Fjalëkalimi duhet të ketë të paktën 6 karaktere.');
       }
       
       // Sign up the user with Supabase Auth
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: trimmedEmail,
         password,
         options: {
           data: {
-            name,
-            full_name: name,
+            name: trimmedName,
+            full_name: trimmedName,
             role
           },
           emailRedirectTo: `${window.location.origin}/dashboard`
@@ -497,7 +517,18 @@ setUser({
 
       if (error) {
         console.error('Signup error:', error);
-        throw new Error(error.message || 'Failed to sign up');
+        // Provide more user-friendly error messages
+        let errorMessage = 'Regjistrimi dështoi. Ju lutemi provoni përsëri.';
+        
+        if (error.message.includes('already registered')) {
+          errorMessage = 'Ky email është i regjistruar tashmë. Ju lutemi përdorni një email tjetër ose bëni hyrjen në llogari.';
+        } else if (error.message.includes('email')) {
+          errorMessage = 'Ju lutemi shkruani një email të vlefshëm.';
+        } else if (error.message.includes('password')) {
+          errorMessage = 'Fjalëkalimi duhet të ketë të paktën 6 karaktere.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       // Debug log to see what was returned

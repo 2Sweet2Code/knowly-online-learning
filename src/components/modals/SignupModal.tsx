@@ -29,9 +29,16 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
 
   if (!isOpen) return null;
 
+  // Helper function to validate email format
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
+    // Validate all required fields are filled
     if (!name || !email || !password || !confirmPassword || !role) {
       toast({
         title: "Gabim!",
@@ -41,10 +48,31 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
       return;
     }
     
+    // Validate email format
+    if (!isValidEmail(email)) {
+      toast({
+        title: "Gabim!",
+        description: "Ju lutemi shkruani një email të vlefshëm.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate password match
     if (password !== confirmPassword) {
       toast({
         title: "Gabim!",
         description: "Fjalëkalimet nuk përputhen. Ju lutemi provoni përsëri.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate password strength (at least 6 characters)
+    if (password.length < 6) {
+      toast({
+        title: "Gabim!",
+        description: "Fjalëkalimi duhet të ketë të paktën 6 karaktere.",
         variant: "destructive",
       });
       return;

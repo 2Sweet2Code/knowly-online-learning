@@ -191,43 +191,55 @@ export const ClassmatesList = ({ courseId }: ClassmatesListProps) => {
     setIsLeavingClass(true);
 
     try {
-      // 1. Find the enrollment
+      // 1. First, verify the user is enrolled
       const { data: enrollment, error: findError } = await supabase
         .from('enrollments')
         .select('id')
         .eq('user_id', user.id)
         .eq('course_id', courseId)
-        .single();
+        .maybeSingle();
 
       if (findError || !enrollment) {
-        throw new Error('Nuk u gjet regjistrimi juaj në këtë kurs.');
+        // If not enrolled, just redirect
+        console.log('User not enrolled in this course, redirecting...');
+        window.location.href = '/courses';
+        return;
       }
 
-      // 2. Delete the enrollment
-      const { error: deleteError } = await supabase
-        .from('enrollments')
-        .delete()
-        .eq('id', enrollment.id);
 
-      if (deleteError) throw deleteError;
+      // 2. Use the RPC function to safely leave the course
+      const { error: leaveError } = await supabase.rpc('leave_course', {
+        p_course_id: courseId,
+        p_user_id: user.id
+      });
 
-      // 3. Clean up related data in parallel
-      await Promise.all([
-        supabase
-          .from('student_grades')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('course_id', courseId),
-        supabase
-          .from('course_comments')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('course_id', courseId),
-        supabase
-          .from('announcement_comments')
-          .delete()
-          .eq('user_id', user.id)
-      ]);
+      if (leaveError) {
+        console.error('Error leaving course:', leaveError);
+        throw new Error('Ndodhi një gabë gjatë largimit nga kursi.');
+      }
+
+      // 3. Clean up any remaining related data in parallel as a fallback
+      try {
+        await Promise.allSettled([
+          supabase
+            .from('student_grades')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('course_id', courseId),
+          supabase
+            .from('course_comments')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('course_id', courseId),
+          supabase
+            .from('announcement_comments')
+            .delete()
+            .eq('user_id', user.id)
+        ]);
+      } catch (cleanupError) {
+        console.error('Error during cleanup:', cleanupError);
+        // Continue even if cleanup fails
+      }
 
       // 4. Invalidate queries first
       await Promise.all([
