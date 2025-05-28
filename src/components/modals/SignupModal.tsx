@@ -31,8 +31,9 @@ export const SignupModal = ({ isOpen, onClose, onSwitchToLogin }: SignupModalPro
 
   // Helper function to validate email format
   const isValidEmail = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+    // More permissive email validation that allows most common email formats
+    const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@.]+\.[^\s@]+$|^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+    return emailRegex.test(email.trim());
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
